@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Excel SQL Builder</title>
+
+    <!-- Office JS -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+    
+    <!-- Third Party Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/alasql@4.0.0/dist/alasql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+    <!-- Styles -->
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="ms-font-m">
+
+    <div class="container">
+        <!-- Header & Toolbar -->
+        <div class="header-row">
+            <h2>SQL Query Builder</h2>
+            <button id="btn-reset" class="small-btn danger-btn">Reset All</button>
+        </div>
+        
+        <!-- Data Source Info -->
+        <div class="section">
+            <div class="ms-font-s-plus" id="current-table">Select a range...</div>
+            <div id="source-list" class="list-container source-container">
+                <!-- Draggable Items appear here -->
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- 1. SELECT -->
+        <div class="section">
+            <label style="margin:0; margin-bottom:8px;">SELECT Columns <input type="checkbox" id="chk-distinct" style="margin-left:5px;"> Distinct</label>
+            <div id="select-list" class="list-container drop-zone">
+                <div class="placeholder">Drop columns here...</div>
+            </div>
+        </div>
+
+        <!-- 2. WHERE -->
+        <div class="section">
+            <label>WHERE (Filter)</label>
+            <div id="where-list" class="list-container drop-zone">
+                <div class="placeholder">Drop columns to filter...</div>
+            </div>
+        </div>
+
+        <!-- 3. GROUP BY -->
+        <div class="section">
+            <label>GROUP BY</label>
+            <div id="groupby-list" class="list-container drop-zone">
+                <div class="placeholder">Drop columns to group...</div>
+            </div>
+        </div>
+
+        <!-- 4. HAVING -->
+        <div class="section">
+            <label>HAVING (Filter Groups)</label>
+            <div id="having-list" class="list-container drop-zone">
+                <div class="placeholder">Drop columns to filter groups...</div>
+            </div>
+        </div>
+
+        <!-- 5. ORDER BY -->
+        <div class="section">
+            <label>ORDER BY</label>
+            <div id="orderby-list" class="list-container drop-zone">
+                <div class="placeholder">Drop columns to sort...</div>
+            </div>
+        </div>
+
+        <!-- 6. CONTROLS -->
+        <div class="section controls">
+            <div class="control-row">
+                <label>Limit:</label>
+                <input type="number" id="txt-limit" placeholder="All" style="width: 60px;">
+            </div>
+            
+            <div class="control-row">
+                <label>Output Cell:</label>
+                <input type="text" id="txt-output" placeholder="New Sheet" readonly>
+                <button id="btn-set-output" class="ms-Button ms-Button--primary">Set</button>
+            </div>
+        </div>
+
+        <!-- 7. SQL PREVIEW -->
+        <div class="section">
+            <label style="margin-bottom: 5px;">Live SQL Preview:</label>
+            <textarea id="sql-preview" readonly class="sql-box"></textarea>
+        </div>
+
+        <!-- 8. ACTIONS -->
+        <div class="footer">
+            <button id="run-btn" class="action-btn">RUN QUERY</button>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD VIRTUAL COLUMN -->
+    <div id="modal-add-col" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h3>Add Calculated Column</h3>
+            <label>Column Name</label>
+            <input type="text" id="new-col-name" placeholder="e.g. TotalAmount">
+            
+            <label>Formula <span style="font-weight:normal; font-size:11px; color:#666;">(Use [ColName] for columns)</span></label>
+            <textarea id="new-col-formula" class="formula-def" style="height:80px;" placeholder="e.g. [Price] * [Qty]"></textarea>
+            
+            <div class="modal-actions">
+                <button id="btn-cancel-col" class="small-btn">Cancel</button>
+                <button id="btn-save-col" class="action-btn" style="width:auto; padding: 6px 12px;">Add Column</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Helpers -->
+    <input type="date" id="date-helper" style="display:none; position:absolute;">
+
+    <!-- Logic -->
+    <script src="taskpane.js" type="text/javascript"></script>
+</body>
+</html>
