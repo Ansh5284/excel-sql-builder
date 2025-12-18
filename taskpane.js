@@ -641,7 +641,7 @@ function getColExpression(func, customVal, colName) {
     // 1. Check Virtual Columns substitution FIRST
     let baseCol = `[${colName}]`;
     if (virtualColumns[colName]) {
-        baseCol = `(${virtualColumns[colName]})`; // Wrap in parens for safety
+        baseCol = virtualColumns[colName]; // Wrap in parens for safety
     }
 
     if (func === "NONE") return baseCol;
