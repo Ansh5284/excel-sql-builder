@@ -6,7 +6,8 @@ let globalHeaders = []; // Real Excel Headers
 let globalColTypes = {}; 
 let virtualColumns = {}; // { "MyCol": "[Price]*[Qty]" }
 let outputRangeAddress = null;
-let activeFormulaInput = null; // Track focused formula input (in modal)
+let activeInput = null; // Track focused input GLOBALLY for modal insertion
+let currentEditCol = null; 
 
 // FUNCTION DEFINITIONS
 const FUNC_GROUPS = {
@@ -33,13 +34,65 @@ Office.onReady((info) => {
     document.getElementById("btn-set-output").onclick = setOutputTarget;
     document.getElementById("date-helper").onchange = handleDatePick;
     
+    // Stage 3 Listener
+    document.getElementById("btn-open-advanced").onclick = openAdvancedEditor;
+
     // Modal Listeners
     document.getElementById("btn-cancel-col").onclick = closeModal;
+    document.getElementById("btn-close-x").onclick = closeModal;
     document.getElementById("btn-save-col").onclick = saveVirtualColumn;
+    document.getElementById("btn-add-rule").onclick = addConditionRow;
+
+    window.switchModalTab = switchModalTab; // Global expose for HTML
 
     loadColumnsFromSelection();
   }
 });
+
+// --- STAGE 3: ADVANCED EDITOR ---
+let dialog = null;
+
+function openAdvancedEditor() {
+    // Hardcoded for local debugging: Points to the dialog folder outside taskpane
+    const fullUrl = "https://localhost:3000/dialog/dialog.html";
+
+    Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
+        function (asyncResult) {
+            if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+                console.error(asyncResult.error.message);
+            } else {
+                dialog = asyncResult.value;
+                dialog.addEventHandler(Office.EventType.DialogMessageReceived, processDialogMessage);
+                
+                // Send current schema to dialog once it opens
+                setTimeout(() => {
+                    const message = JSON.stringify({
+                        type: "init",
+                        schema: globalHeaders,
+                        virtuals: virtualColumns
+                    });
+                    dialog.messageChild(message);
+                }, 1000); // Small delay to ensure load
+            }
+        }
+    );
+}
+
+function processDialogMessage(arg) {
+    const message = JSON.parse(arg.message);
+    if (message.action === "close") {
+        dialog.close();
+    }
+}
+
+// --- AGGRESSIVE NUMBER CLEANER ---
+function cleanNumber(val) {
+    if (typeof val === 'number') return val;
+    if (val === null || val === undefined || val === '') return 0;
+    let str = String(val).replace(/[^0-9.-]/g, '');
+    let num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+}
 
 // ==========================================
 // A. LOAD DATA
@@ -57,10 +110,26 @@ async function loadColumnsFromSelection() {
 
     document.getElementById("current-table").innerText = "Range: " + range.address; 
 
-    globalHeaders = range.values[0];
+    // 1. SANITIZE HEADERS
+    const rawHeaders = range.values[0];
+    globalHeaders = [];
+    let headerCounts = {};
+
+    rawHeaders.forEach((h, i) => {
+        let cleanHeader = (h === null || h === undefined || h === "") ? `Column_${i+1}` : String(h);
+        if (headerCounts[cleanHeader]) {
+            let count = headerCounts[cleanHeader]++;
+            cleanHeader = `${cleanHeader}_${count}`;
+        } else {
+            headerCounts[cleanHeader] = 1;
+        }
+        globalHeaders.push(cleanHeader);
+    });
+
     const firstRowData = range.values[1];
     const firstRowFormat = range.numberFormat[1];
 
+    // 2. DETECT TYPES
     globalHeaders.forEach((header, index) => {
         let fmt = firstRowFormat[index];
         if (typeof fmt === 'string' && fmt.toLowerCase().includes('d') && fmt.toLowerCase().includes('m')) {
@@ -72,13 +141,25 @@ async function loadColumnsFromSelection() {
         }
     });
 
+    // 3. BUILD DATA
     globalData = range.values.slice(1).map(row => {
       let obj = {};
       globalHeaders.forEach((h, i) => {
           let val = row[i];
-          if (globalColTypes[h] === "DATE" && typeof val === 'number') {
-              val = excelSerialToDate(val);
+          const type = globalColTypes[h];
+
+          if (type === "NUMBER") {
+              val = cleanNumber(val); 
+          } else if (type === "DATE") {
+              if (typeof val === 'number') {
+                  val = excelSerialToDate(val);
+              } else {
+                  val = String(val || "");
+              }
+          } else {
+              val = (val === null || val === undefined) ? "" : String(val);
           }
+          
           obj[h] = val;
       });
       return obj;
@@ -99,45 +180,44 @@ function excelSerialToDate(serial) {
     return `${year}-${month}-${day}`;
 }
 
-// --- RENDER SOURCE LIST (SPLIT CHIPS) ---
+// --- RENDER SOURCE LIST ---
 function renderSourceList() {
   const list = document.getElementById("source-list");
   list.innerHTML = "";
 
-  // 1. "Add Column" Chip
   let addBtn = document.createElement("div");
   addBtn.className = "item add-col-btn";
   addBtn.innerHTML = `<span class="item-name" style="padding:4px 12px;">+ Add Column</span>`;
-  addBtn.onclick = openModal;
+  addBtn.onclick = () => openModal(null);
   list.appendChild(addBtn);
 
-  // 2. Real Columns + Virtual Columns
   const allCols = [...globalHeaders, ...Object.keys(virtualColumns)];
 
   allCols.forEach(col => {
     const isVirtual = virtualColumns.hasOwnProperty(col);
     const type = globalColTypes[col] || "TEXT";
     
-    // Create Chip Container
     let chip = document.createElement("div");
     chip.className = "item";
     chip.dataset.id = col;
 
-    // A. Icon Side (Left)
     let icon = document.createElement("div");
     icon.className = "item-type";
     
-    // Icon Logic
     if (isVirtual) {
         icon.innerText = "ƒx";
         icon.className += " type-calc";
-        icon.title = "Calculated Column";
+        icon.title = "Calculated Column - Click to Edit";
+        // CLICK TO EDIT LOGIC
+        icon.onclick = (e) => {
+            e.stopPropagation();
+            openModal(col); // Edit this column
+        };
     } else {
         if (type === "NUMBER") { icon.innerText = "123"; icon.className += " type-num"; }
         else if (type === "DATE") { icon.innerText = "📅"; icon.className += " type-date"; }
         else { icon.innerText = "ABC"; icon.className += " type-txt"; }
         
-        // Cycle Type on Click (Only for Real columns)
         icon.onclick = (e) => {
             e.stopPropagation();
             cycleColumnType(col);
@@ -145,12 +225,10 @@ function renderSourceList() {
         icon.title = "Click to toggle type";
     }
 
-    // B. Name Side (Right)
     let nameSpan = document.createElement("div");
     nameSpan.className = "item-name";
     nameSpan.innerText = col;
 
-    // Click-to-Insert (into Modal Formula box)
     chip.onclick = function(e) {
         if (activeFormulaInput) {
             e.stopPropagation();
@@ -171,59 +249,236 @@ function cycleColumnType(col) {
     let next = types[(idx + 1) % types.length];
     
     updateColumnDataType(col, next);
-    renderSourceList(); // Re-render to show new icon
+    renderSourceList(); 
     updateSQLPreview();
 }
 
-// --- MODAL LOGIC ---
-function openModal() {
+// --- MODAL LOGIC (TABS & CONDITIONAL) ---
+
+function switchModalTab(tabName) {
+    // Reset classes
+    document.getElementById("tab-btn-formula").classList.remove("active");
+    document.getElementById("tab-btn-cond").classList.remove("active");
+    document.getElementById("view-formula").style.display = "none";
+    document.getElementById("view-cond").style.display = "none";
+
+    // Activate
+    document.getElementById("tab-btn-" + tabName).classList.add("active");
+    document.getElementById("view-" + tabName).style.display = "block";
+    
+    // Set active input for click-to-insert
+    if (tabName === 'formula') {
+        const formulaInput = document.getElementById("new-col-formula");
+        formulaInput.focus();
+        activeInput = formulaInput;
+    } else {
+        activeInput = null;
+    }
+}
+
+function openModal(colName) {
     document.getElementById("modal-add-col").style.display = "flex";
-    const input = document.getElementById("new-col-formula");
-    input.value = "";
-    document.getElementById("new-col-name").value = "";
-    input.focus();
-    activeFormulaInput = input; // Set focus for click-to-insert
+    const nameInput = document.getElementById("new-col-name");
+    const formulaInput = document.getElementById("new-col-formula");
+    const saveBtn = document.getElementById("btn-save-col");
+
+    // 1. POPULATE CHIP LIST IN MODAL (With Icons)
+    const modalChipList = document.getElementById("modal-chip-list");
+    modalChipList.innerHTML = "";
+    
+    const allCols = [...globalHeaders, ...Object.keys(virtualColumns)];
+    allCols.forEach(col => {
+        // Don't show self if editing
+        if (col === colName) return;
+
+        let chip = document.createElement("div");
+        chip.className = "item";
+        chip.style.margin = "2px";
+        
+        // Add Icon for consistency and better visuals
+        const type = globalColTypes[col] || "TEXT";
+        const isVirtual = virtualColumns.hasOwnProperty(col);
+        let iconHtml = "";
+        if (isVirtual) {
+            iconHtml = `<div class="item-type type-calc" style="min-width:25px; font-size:10px;">ƒx</div>`;
+        } else if (type === "NUMBER") { 
+            iconHtml = `<div class="item-type type-num" style="min-width:25px; font-size:10px;">123</div>`;
+        } else if (type === "DATE") { 
+            iconHtml = `<div class="item-type type-date" style="min-width:25px; font-size:10px;">📅</div>`;
+        } else { 
+            iconHtml = `<div class="item-type type-txt" style="min-width:25px; font-size:10px;">ABC</div>`;
+        }
+
+        chip.innerHTML = `${iconHtml}<span class="item-name" style="padding:2px 8px;">${col}</span>`;
+        
+        // CLICK TO INSERT INTO ACTIVE INPUT
+        chip.onclick = (e) => {
+            e.stopPropagation();
+            if (activeInput) {
+                insertTextAtCursor(activeInput, `[${col}]`);
+            } else {
+                // Fallback: If no input focused, default to formula box if it's visible
+                if(document.getElementById("view-formula").style.display !== 'none'){
+                    insertTextAtCursor(formulaInput, `[${col}]`);
+                }
+            }
+        };
+        modalChipList.appendChild(chip);
+    });
+
+
+    // 2. SETUP FIELDS
+    document.getElementById("cond-rows-container").innerHTML = "";
+    document.getElementById("cond-else").value = "";
+    document.getElementById("cond-else").onfocus = (e) => activeInput = e.target;
+
+    if (colName) {
+        // EDIT MODE
+        currentEditCol = colName;
+        nameInput.value = colName;
+        nameInput.disabled = true; 
+        
+        // Check if formula looks like a CASE statement
+        if (virtualColumns[colName].trim().toUpperCase().startsWith("CASE")) {
+             formulaInput.value = virtualColumns[colName];
+             switchModalTab('formula');
+        } else {
+             formulaInput.value = virtualColumns[colName];
+             switchModalTab('formula');
+        }
+        
+        saveBtn.innerText = "Update Column";
+    } else {
+        // NEW MODE
+        currentEditCol = null;
+        nameInput.value = "";
+        nameInput.disabled = false;
+        formulaInput.value = "";
+        saveBtn.innerText = "Add Column";
+        switchModalTab('formula');
+        addConditionRow(); // Start with one row
+    }
+    
+    // Focus tracking for formula box
+    formulaInput.onfocus = (e) => activeInput = e.target;
+    formulaInput.focus();
+    activeInput = formulaInput;
 }
 
 function closeModal() {
     document.getElementById("modal-add-col").style.display = "none";
-    activeFormulaInput = null;
+    activeInput = null;
+    currentEditCol = null;
+}
+
+// --- CONDITIONAL BUILDER LOGIC ---
+function addConditionRow() {
+    const container = document.getElementById("cond-rows-container");
+    const div = document.createElement("div");
+    div.className = "cond-row";
+    
+    // Using Text Inputs for Columns now to allow multiple columns / math
+    div.innerHTML = `
+        <span class="cond-if">IF</span>
+        <input type="text" class="cond-input-col" placeholder="Column/Expr">
+        <select class="cond-op" title="Operator">
+            <option value="=">=</option>
+            <option value=">">></option>
+            <option value="<"><</option>
+            <option value=">=">>=</option>
+            <option value="<="><=</option>
+            <option value="!=">!=</option>
+            <option value="LIKE">LIKE</option>
+        </select>
+        <input type="text" class="cond-val" placeholder="Value">
+        <span class="cond-then">THEN</span>
+        <input type="text" class="cond-res" placeholder="Result">
+        <span class="cond-del" title="Remove Rule">✖</span>
+    `;
+    
+    // Add focus listeners for chip insertion
+    const inputs = div.querySelectorAll("input");
+    inputs.forEach(inp => {
+        inp.onfocus = (e) => activeInput = e.target;
+    });
+
+    // Add delete listener
+    div.querySelector(".cond-del").onclick = () => div.remove();
+
+    container.appendChild(div);
+    
+    // Auto-focus the first input (Column/Expr) of the new row so user can immediately click a chip
+    const firstInput = div.querySelector(".cond-input-col");
+    if(firstInput) {
+        firstInput.focus();
+        activeInput = firstInput;
+    }
+}
+
+function buildCaseStatement() {
+    const rows = document.querySelectorAll(".cond-row");
+    if (rows.length === 0) return "";
+
+    let sql = "CASE ";
+    rows.forEach(row => {
+        let col = row.querySelector(".cond-input-col").value.trim();
+        const op = row.querySelector(".cond-op").value;
+        let val = row.querySelector(".cond-val").value.trim();
+        let res = row.querySelector(".cond-res").value.trim();
+
+        if(!col) return; // Skip empty rows
+
+        // Auto-quote strings if they aren't numbers or columns
+        if (isNaN(val) && !val.startsWith("'") && !val.startsWith("[")) val = `'${val}'`;
+        if (isNaN(res) && !res.startsWith("'") && !res.startsWith("[")) res = `'${res}'`;
+
+        sql += `WHEN ${col} ${op} ${val} THEN ${res} `;
+    });
+
+    let elseVal = document.getElementById("cond-else").value.trim();
+    if (!elseVal) elseVal = "NULL";
+    else if (isNaN(elseVal) && !elseVal.startsWith("'") && !elseVal.startsWith("[")) elseVal = `'${elseVal}'`;
+
+    sql += `ELSE ${elseVal} END`;
+    return sql;
 }
 
 function saveVirtualColumn() {
     const name = document.getElementById("new-col-name").value.trim();
-    const formula = document.getElementById("new-col-formula").value.trim();
+    let formula = "";
+
+    if (document.getElementById("tab-btn-cond").classList.contains("active")) {
+        formula = buildCaseStatement();
+    } else {
+        formula = document.getElementById("new-col-formula").value.trim();
+    }
     
     if (!name || !formula) {
         console.error("Name and Formula required");
         return;
     }
     
-    // Check duplicates
-    if (globalHeaders.includes(name) || virtualColumns[name]) {
+    if (!currentEditCol && (globalHeaders.includes(name) || virtualColumns[name])) {
         console.error("Column name exists");
-        // Could add UI error message here
         return;
     }
 
     virtualColumns[name] = formula;
-    globalColTypes[name] = "NUMBER"; // Default virtuals to Number (safest assumption for math)
+    globalColTypes[name] = "NUMBER"; // Default
     
     renderSourceList();
     closeModal();
+    updateSQLPreview();
 }
 
 function insertTextAtCursor(input, text) {
+    if (!input) return;
     const start = input.selectionStart;
     const end = input.selectionEnd;
     const val = input.value;
     input.value = val.substring(0, start) + text + val.substring(end);
     input.selectionStart = input.selectionEnd = start + text.length;
     input.focus();
-    // Only update preview if NOT in modal (modal doesn't affect query yet)
-    if (!document.getElementById("modal-add-col").style.display === "none") {
-        updateSQLPreview();
-    }
 }
 
 async function setOutputTarget() {
@@ -261,9 +516,7 @@ function initDragAndDrop() {
     const sharedGroup = {
         name: 'shared',
         pull: function(to, from, dragEl, evt) {
-            // Prevent dragging if Modal is open (prevent inserting into modal by drag)
-            if (activeFormulaInput) return false;
-
+            if (activeInput) return false; // Prevent drag if editing modal
             if (from.el.id === "source-list") return "clone";
             let isCtrl = false;
             if (evt.ctrlKey) isCtrl = true;
@@ -326,14 +579,14 @@ function resetUI() {
     document.getElementById("txt-limit").value = "";
     
     activeFormulaInput = null;
-    virtualColumns = {}; // Clear virtuals
+    virtualColumns = {}; 
     renderSourceList();
 
     updateSQLPreview();
 }
 
 // ==========================================
-// C. DATA TYPE HANDLING
+// C. DATA TYPE HANDLING (Strict)
 // ==========================================
 function updateColumnDataType(colName, newType) {
     console.log(`Converting column '${colName}' to ${newType}`);
@@ -341,26 +594,19 @@ function updateColumnDataType(colName, newType) {
 
     globalData.forEach(row => {
         let val = row[colName];
-        if (val === undefined || val === null) return;
-
         if (newType === "NUMBER") {
-            if (typeof val === 'string') {
-                val = val.replace(/,/g, '').trim();
-                if (val === '') val = 0;
-            }
-            let num = parseFloat(val);
-            row[colName] = isNaN(num) ? 0 : num;
+            val = cleanNumber(val); 
+            row[colName] = val;
         } else if (newType === "TEXT") {
-            row[colName] = String(val);
+            row[colName] = (val === null || val === undefined) ? "" : String(val);
         } else if (newType === "DATE") {
             if (typeof val === 'number') {
                 row[colName] = excelSerialToDate(val);
             } else {
-                row[colName] = String(val);
+                row[colName] = String(val || "");
             }
         }
     });
-    // Note: No need to refresh Select Rows anymore as we removed Type Dropdowns there
 }
 
 function populateFuncDropdown(select, type) {
@@ -412,7 +658,7 @@ function applyConfig(row, config) {
 }
 
 // ==========================================
-// D. ROW CREATION (CLEANUP)
+// D. ROW CREATION
 // ==========================================
 
 function createSelectRow(colName, targetElement, config) {
@@ -423,7 +669,6 @@ function createSelectRow(colName, targetElement, config) {
     
     row.innerHTML = `<span class="col-label" title="${colName}">${colName}</span>`;
     
-    // Func Dropdown (Standard)
     const select = document.createElement("select");
     select.className = "func-select";
     populateFuncDropdown(select, type);
@@ -586,7 +831,7 @@ function toggleCustomInput(select, input) {
 }
 
 function addOperatorDropdown(row) {
-    const ops = ["=", ">", "<", ">=", "<=", "<>", "IN", "BETWEEN", "LIKE", "NOT LIKE", "IS NULL", "IS NOT NULL"];
+    const ops = ["=", ">", "<", ">=", "<=", "<>", "IN", "BETWEEN", "LIKE", "IS NULL", "IS NOT NULL"];
     let select = document.createElement("select");
     select.className = "where-op";
     ops.forEach(op => {
@@ -638,10 +883,18 @@ function handleDatePick(e) {
 // --- LOGIC HELPERS ---
 
 function getColExpression(func, customVal, colName) {
-    // 1. Check Virtual Columns substitution FIRST
     let baseCol = `[${colName}]`;
     if (virtualColumns[colName]) {
-        baseCol = virtualColumns[colName]; // Wrap in parens for safety
+        baseCol = virtualColumns[colName]; // NO PARENTHESES WRAPPER
+        
+        // FIX: Recursively replace other Virtual Columns inside this formula
+        Object.keys(virtualColumns).forEach(key => {
+            // Check if this formula uses another virtual column (e.g., [Total GST])
+            if (key !== colName && baseCol.includes(`[${key}]`)) {
+                // Replace [Total GST] with (Its Formula) to ensure SQL sees raw logic
+                baseCol = baseCol.split(`[${key}]`).join(`(${virtualColumns[key]})`);
+            }
+        });
     }
 
     if (func === "NONE") return baseCol;
@@ -651,12 +904,10 @@ function getColExpression(func, customVal, colName) {
         let text = customVal.trim();
         if (!text) return baseCol; 
         
-        // Replace placeholders
         if (text.includes("[@col]")) text = text.split("[@col]").join(baseCol);
         if (text.includes("@col")) {
             expr = text.split("@col").join(baseCol);
         } else {
-            // If just text, wrap
             expr = `${text}(${baseCol})`;
         }
     } else {
@@ -801,12 +1052,23 @@ function runQuery() {
         writeResult(result);
     } catch (err) {
         console.error("SQL Error:", err);
-        document.getElementById("txt-output").value = "SQL Error: " + err.message;
+        document.getElementById("txt-output").value = "SQL Error: " + err.message + " (Check Console for details)";
     }
 }
 
 async function writeResult(data) {
     if (!data || data.length === 0) return;
+
+    // Apply Rounding Preference to Output Data
+    // Loop through data and if value is a float, round to 2 digits
+    data.forEach(row => {
+        Object.keys(row).forEach(key => {
+            let val = row[key];
+            if (typeof val === 'number' && !Number.isInteger(val)) {
+                row[key] = parseFloat(val.toFixed(2));
+            }
+        });
+    });
 
     await Excel.run(async (context) => {
         let range;
