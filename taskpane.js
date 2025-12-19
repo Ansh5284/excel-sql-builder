@@ -54,7 +54,7 @@ let dialog = null;
 
 function openAdvancedEditor() {
     // Hardcoded for local debugging: Points to the dialog folder outside taskpane
-    const fullUrl = "https://localhost:3000/dialog/dialog.html";
+    const fullUrl = "dialog.html";
 
     Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
         function (asyncResult) {
