@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp 
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" 
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" 
+  xsi:type="TaskPaneApp">
+
+  <Id>c39c5922-3432-4217-9257-238493298452</Id>
+  <Version>1.0.0.1</Version>
+  <ProviderName>Ansh</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Excel SQL Builder"/>
+  <Description DefaultValue="Build SQL queries visually inside Excel using drag and drop."/>
+  
+  <IconUrl DefaultValue="https://ansh5284.github.io/excel-sql-builder/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://ansh5284.github.io/excel-sql-builder/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/ansh5284/excel-sql-builder/issues"/>
+
+  <AppDomains>
+    <AppDomain>https://ansh5284.github.io</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane.html"/>
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
+          
+          <FunctionFile resid="Commands.Url"/>
+
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabDeveloper">
+              <Group id="CommandsGroup">
+                <Label resid="Commands.Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16"/>
+                  <bt:Image size="32" resid="Icon.32x32"/>
+                  <bt:Image size="80" resid="Icon.80x80"/>
+                </Icon>
+                
+                <Control xsi:type="Button" id="TaskpaneButton">
+                  <Label resid="Taskpane.Button.Label"/>
+                  <Supertip>
+                    <Title resid="Taskpane.Button.Label"/>
+                    <Description resid="Taskpane.Button.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16"/>
+                    <bt:Image size="32" resid="Icon.32x32"/>
+                    <bt:Image size="80" resid="Icon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://ansh5284.github.io/excel-sql-builder/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://ansh5284.github.io/excel-sql-builder/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://ansh5284.github.io/excel-sql-builder/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/ansh5284/excel-sql-builder"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="Get started with SQL Builder!"/>
+        <bt:String id="Commands.Group.Label" DefaultValue="SQL Builder"/>
+        <bt:String id="Taskpane.Button.Label" DefaultValue="Open SQL Builder"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Your new SQL Builder add-in loaded successfully. Go to the Developer tab to use it."/>
+        <bt:String id="Taskpane.Button.Tooltip" DefaultValue="Click to open the SQL Builder Task Pane"/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
