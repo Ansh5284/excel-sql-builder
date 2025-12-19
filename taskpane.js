@@ -586,7 +586,7 @@ function toggleCustomInput(select, input) {
 }
 
 function addOperatorDropdown(row) {
-    const ops = ["=", ">", "<", ">=", "<=", "<>", "IN", "BETWEEN", "LIKE", "IS NULL", "IS NOT NULL"];
+    const ops = ["=", ">", "<", ">=", "<=", "<>", "IN", "BETWEEN", "LIKE", "NOT LIKE", "IS NULL", "IS NOT NULL"];
     let select = document.createElement("select");
     select.className = "where-op";
     ops.forEach(op => {
