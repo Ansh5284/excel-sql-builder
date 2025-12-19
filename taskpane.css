@@ -35,7 +35,7 @@ h2, h3 {
     color: var(--brand-primary);
 }
 h2 { font-size: 20px; font-weight: 600; }
-h3 { font-size: 16px; margin-bottom: 10px; }
+h3 { font-size: 16px; margin-bottom: 0; }
 
 /* --- LAYOUT --- */
 .container {
@@ -81,12 +81,25 @@ h3 { font-size: 16px; margin-bottom: 10px; }
 
 .source-container {
     display: flex;
-    flex-wrap: wrap; /* Back to horizontal wrap */
+    flex-wrap: wrap; 
     gap: 8px;
     min-height: 44px;
     padding: 4px;
     background: transparent;
+    max-height: 150px; /* Limit height */
+    overflow-y: auto; /* Scroll if too many columns */
 }
+
+/* Small Chips for Modal */
+.source-container.small-chips {
+    max-height: 80px;
+    background: #f8f8f8;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 5px;
+    margin-bottom: 10px;
+}
+.small-chips .item { transform: scale(0.9); margin: 0; }
 
 /* The Split Chip Container */
 .item {
@@ -98,8 +111,9 @@ h3 { font-size: 16px; margin-bottom: 10px; }
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     transition: all 0.2s;
     font-size: 12px;
-    overflow: hidden; /* For inner borders */
+    overflow: hidden; 
     user-select: none;
+    height: 26px; /* Fixed height for consistency */
 }
 .item:hover {
     border-color: var(--brand-primary);
@@ -112,13 +126,13 @@ h3 { font-size: 16px; margin-bottom: 10px; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px 8px;
+    padding: 0 8px;
     font-weight: bold;
     font-family: monospace;
-    cursor: pointer; /* Clickable */
+    cursor: pointer; 
     background: #f8f8f8;
     border-right: 1px solid #eee;
-    min-width: 35px;
+    min-width: 30px;
     font-size: 11px;
 }
 .item-type:hover {
@@ -127,14 +141,14 @@ h3 { font-size: 16px; margin-bottom: 10px; }
 }
 
 /* Colors for Types */
-.type-num { color: #0078d4; } /* Blue for Numbers */
-.type-txt { color: #d13438; } /* Red for Text */
-.type-date { color: #107c10; } /* Green for Date */
-.type-calc { color: #813a7c; background-color: #fcf0fa !important; } /* Purple for Calc */
+.type-num { color: #0078d4; }
+.type-txt { color: #d13438; }
+.type-date { color: #107c10; }
+.type-calc { color: #813a7c; background-color: #fcf0fa !important; }
 
 /* Right Part: Name */
 .item-name {
-    padding: 4px 10px;
+    padding: 0 10px;
     font-weight: 500;
     cursor: grab;
     display: flex;
@@ -237,6 +251,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand-primary); 
     background: #f3f2f1;
     border-radius: 3px;
 }
+.dashed-btn { border: 1px dashed #999; color: #666; width: 100%; margin-top: 5px; }
 .remove-btn { color: #a19f9d; cursor: pointer; padding: 4px; border-radius: 50%; }
 .remove-btn:hover { color: var(--error-red); background-color: #fdf3f4; }
 .date-btn { cursor: pointer; margin-left: 4px; font-size: 16px; opacity: 0.7; }
@@ -269,7 +284,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand-primary); 
     resize: vertical;
 }
 
-/* --- MODAL --- */
+/* --- MODAL UPDATES --- */
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -282,18 +297,64 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand-primary); 
 }
 .modal-card {
     background: white;
-    width: 90%;
-    max-width: 350px;
-    padding: 20px;
+    width: 95%;
+    max-width: 450px;
+    height: 80vh; /* Fixed height relative to viewport */
     border-radius: var(--radius-md);
     box-shadow: 0 10px 25px rgba(0,0,0,0.2);
     display: flex;
     flex-direction: column;
-    gap: 10px;
 }
-.modal-actions {
+.modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+.close-modal-btn { cursor: pointer; font-size: 16px; color: #666; }
+.close-modal-btn:hover { color: red; }
+
+.modal-row { padding: 10px 20px 0 20px; display: flex; align-items: center; gap: 10px; }
+.modal-chips-area { padding: 10px 20px; border-bottom: 1px solid #f0f0f0; }
+
+.modal-tabs { display: flex; border-bottom: 1px solid #ccc; margin: 0 20px; }
+.tab {
+    padding: 8px 15px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    color: #666;
+    border-bottom: 3px solid transparent;
+}
+.tab:hover { color: var(--brand-primary); }
+.tab.active { color: var(--brand-primary); border-bottom-color: var(--brand-primary); }
+
+.modal-body-scroll { flex: 1; overflow-y: auto; padding: 20px; }
+.modal-actions { padding: 15px 20px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px; }
+
+/* Formula Box */
+.formula-def { width: 100%; font-family: 'Consolas', monospace; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+
+/* Conditional Builder */
+.cond-row {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 8px;
+    background: #faf9f8;
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+.cond-if { font-weight: bold; font-size: 11px; color: #0078d4; width: 20px; }
+.cond-then { font-weight: bold; font-size: 11px; color: #0078d4; width: 35px; text-align: center;}
+.cond-input-col { flex: 2; min-width: 0; } /* Text input for column */
+.cond-op { width: 50px; }
+.cond-val { width: 60px; }
+.cond-res { flex: 1; min-width: 0; }
+.cond-del { cursor: pointer; color: #a80000; font-weight: bold; padding: 0 5px; font-size: 14px; }
+
+.cond-else-row {
+    display: flex;
+    align-items: center;
     gap: 10px;
     margin-top: 10px;
+    padding: 8px;
+    background: #f0f6ff;
+    border-radius: 4px;
 }
