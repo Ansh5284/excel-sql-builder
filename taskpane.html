@@ -22,7 +22,11 @@
         <!-- Header & Toolbar -->
         <div class="header-row">
             <h2>SQL Query Builder</h2>
-            <button id="btn-reset" class="small-btn danger-btn">Reset All</button>
+            <div style="display:flex; gap:5px;">
+                <!-- NEW BUTTON FOR STAGE 3 -->
+                <button id="btn-open-advanced" class="small-btn" style="background:#eff6fc; color:#0078d4; border-color:#0078d4;">🚀 Advanced</button>
+                <button id="btn-reset" class="small-btn danger-btn">Reset</button>
+            </div>
         </div>
         
         <!-- Data Source Info -->
@@ -104,16 +108,54 @@
     <!-- MODAL: ADD VIRTUAL COLUMN -->
     <div id="modal-add-col" class="modal-overlay" style="display:none;">
         <div class="modal-card">
-            <h3>Add Calculated Column</h3>
-            <label>Column Name</label>
-            <input type="text" id="new-col-name" placeholder="e.g. TotalAmount">
+            <div class="modal-header">
+                <h3>Add Calculated Column</h3>
+                <span class="close-modal-btn" id="btn-close-x">✖</span>
+            </div>
             
-            <label>Formula <span style="font-weight:normal; font-size:11px; color:#666;">(Use [ColName] for columns)</span></label>
-            <textarea id="new-col-formula" class="formula-def" style="height:80px;" placeholder="e.g. [Price] * [Qty]"></textarea>
+            <!-- Shared Inputs -->
+            <div class="modal-row">
+                <label>Name:</label>
+                <input type="text" id="new-col-name" placeholder="Column Name">
+            </div>
+
+            <!-- Chips Container (ALWAYS VISIBLE for clicking) -->
+            <div class="modal-chips-area">
+                <label style="font-size:11px; color:#666;">Available Columns (Click to Insert):</label>
+                <div id="modal-chip-list" class="source-container small-chips">
+                    <!-- Cloned chips will go here -->
+                </div>
+            </div>
+            
+            <!-- TABS -->
+            <div class="modal-tabs">
+                <div class="tab active" id="tab-btn-formula" onclick="switchModalTab('formula')">Standard Formula</div>
+                <div class="tab" id="tab-btn-cond" onclick="switchModalTab('cond')">Conditional (IF/ELSE)</div>
+            </div>
+
+            <div class="modal-body-scroll">
+                <!-- TAB 1: FORMULA -->
+                <div id="view-formula" class="tab-view">
+                    <textarea id="new-col-formula" class="formula-def" placeholder="e.g. [Price] * [Qty]"></textarea>
+                </div>
+
+                <!-- TAB 2: CONDITIONAL -->
+                <div id="view-cond" class="tab-view" style="display:none;">
+                    <div id="cond-rows-container">
+                        <!-- Dynamic Rows go here -->
+                    </div>
+                    <button id="btn-add-rule" class="small-btn dashed-btn">+ Add Rule</button>
+                    
+                    <div class="cond-else-row">
+                        <span style="font-weight:bold; font-size:11px;">ELSE</span>
+                        <input type="text" id="cond-else" placeholder="Default Result">
+                    </div>
+                </div>
+            </div>
             
             <div class="modal-actions">
                 <button id="btn-cancel-col" class="small-btn">Cancel</button>
-                <button id="btn-save-col" class="action-btn" style="width:auto; padding: 6px 12px;">Add Column</button>
+                <button id="btn-save-col" class="action-btn" style="width:auto; padding: 6px 12px;">Save Column</button>
             </div>
         </div>
     </div>
