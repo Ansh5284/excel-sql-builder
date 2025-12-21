@@ -26,7 +26,7 @@
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane.html"/>
+    <SourceLocation DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane/taskpane.html"/>
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
