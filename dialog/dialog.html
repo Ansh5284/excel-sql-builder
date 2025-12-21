@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SQL Advanced Editor</title>
+
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+    <link href="dialog.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo">🍳 SQL Workbench</div>
+        <div class="tabs">
+            <div class="tab active" id="tab-visual" onclick="switchTab('visual')">Visual Joiner</div>
+            <div class="tab" id="tab-sql" onclick="switchTab('sql')">Raw SQL</div>
+        </div>
+    </div>
+
+    <div class="workspace">
+        <div class="sidebar">
+            <div class="sidebar-actions">
+                <button class="btn-icon" id="btn-add-table"><span>📅</span> Add Table</button>
+                <button class="btn-icon" id="btn-add-calc"><span>ƒx</span> Add Calc</button>
+            </div>
+            <div class="tree-view" id="ingredients-list">
+                <div class="placeholder-text">Loading Schema...</div>
+            </div>
+        </div>
+
+        <div class="main-area">
+            <!-- VIEW 1: VISUAL JOINER -->
+            <div id="view-visual" class="canvas-view" style="display:flex;">
+                <div class="canvas-bg" id="visual-drop-zone">
+                    <!-- SVG LAYER FOR LINES -->
+                    <svg id="connections-layer"></svg>
+                    
+                    <div class="empty-state">Drag Tables here, then drag columns to connect them.</div>
+                </div>
+            </div>
+
+            <!-- VIEW 2: SQL EDITOR -->
+            <div id="view-sql" class="canvas-view" style="display:none; flex-direction:column;">
+                <div class="editor-toolbar">
+                    <button class="editor-btn">Format SQL</button>
+                    <button class="editor-btn">Clear</button>
+                </div>
+                <textarea id="sql-editor-area" class="sql-area" placeholder="-- SQL will generate automatically..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <button class="btn btn-cancel" id="btn-close">Cancel</button>
+        <button class="btn btn-primary" id="btn-apply">Run & Load to Excel</button>
+    </div>
+
+    <!-- JOIN EDITOR BUBBLE (Floating) -->
+    <div id="join-editor" class="join-popover" style="display:none;">
+        <div class="join-header">Edit Relationship</div>
+        <div class="join-body">
+            <select id="join-type-select">
+                <option value="INNER JOIN">INNER JOIN</option>
+                <option value="LEFT JOIN">LEFT JOIN</option>
+                <option value="RIGHT JOIN">RIGHT JOIN</option>
+                <option value="FULL OUTER JOIN">FULL JOIN</option>
+            </select>
+            <div class="join-equation">
+                <span id="join-left-col">Col A</span>
+                <select id="join-op-select">
+                    <option value="=">=</option>
+                    <option value=">">></option>
+                    <option value="<"><</option>
+                    <option value=">=">>=</option>
+                    <option value="<="><=</option>
+                    <option value="<>"><></option>
+                </select>
+                <span id="join-right-col">Col B</span>
+            </div>
+        </div>
+        <div class="join-footer">
+            <button class="btn-xs btn-danger" id="btn-delete-join">Delete Line</button>
+            <button class="btn-xs btn-primary" id="btn-save-join">Update</button>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD VIRTUAL COLUMN (Same as before) -->
+    <div id="modal-add-col" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Add Calculated Column</h3>
+                <span class="close-modal-btn" id="btn-close-x">✖</span>
+            </div>
+            <div class="modal-row">
+                <label>Name:</label>
+                <input type="text" id="new-col-name" placeholder="Column Name">
+            </div>
+            <div class="modal-chips-area">
+                <label style="font-size:11px; color:#666;">Available Columns (Click to Insert):</label>
+                <div id="modal-chip-list" class="source-container small-chips"></div>
+            </div>
+            <div class="modal-tabs">
+                <div class="tab active" id="tab-btn-formula" onclick="switchModalTab('formula')">Standard Formula</div>
+                <div class="tab" id="tab-btn-cond" onclick="switchModalTab('cond')">Conditional (IF/ELSE)</div>
+            </div>
+            <div class="modal-body-scroll">
+                <div id="view-formula" class="tab-view">
+                    <textarea id="new-col-formula" class="formula-def" placeholder="e.g. [Price] * [Qty]"></textarea>
+                </div>
+                <div id="view-cond" class="tab-view" style="display:none;">
+                    <div id="cond-rows-container"></div>
+                    <button id="btn-add-rule" class="small-btn dashed-btn">+ Add Rule</button>
+                    <div class="cond-else-row">
+                        <span style="font-weight:bold; font-size:11px;">ELSE</span>
+                        <input type="text" id="cond-else" placeholder="Default Result">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-cancel-col" class="small-btn">Cancel</button>
+                <button id="btn-save-col" class="action-btn" style="width:auto; padding: 6px 12px;">Save Column</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
