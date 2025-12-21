@@ -86,7 +86,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/ansh5284/excel-sql-builder"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ansh5284.github.io/excel-sql-builder/taskpane/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with SQL Builder!"/>
