@@ -53,7 +53,7 @@ Office.onReady((info) => {
 let dialog = null;
 
 function openAdvancedEditor() {
-    const fullUrl = "https://localhost:3000/dialog.html";
+    const fullUrl = "https://ansh5284.github.io/excel-sql-builder/dialog/dialog.html";
 
     Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
         function (asyncResult) {
