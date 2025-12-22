@@ -195,6 +195,7 @@ function addTableToCanvas(tableName, x, y) {
         name: tableName,
         alias: tableName, // Start alias same as name
         columns: currentData.tables[tableName].schema,
+        columnAliases: {}, // NEW: Store column aliases { "OldName": "NewName" }
         selected: [],
         left: Math.max(10, left),
         top: Math.max(10, top)
@@ -273,7 +274,78 @@ function renderTableCard(tableObj) {
         if(tableObj.selected.includes(col)) {
             item.classList.add('selected');
         }
-        item.innerText = col;
+
+        // --- Column Alias Logic ---
+        const colAlias = tableObj.columnAliases && tableObj.columnAliases[col];
+        
+        if (colAlias) {
+            // Render Old (Gray) and New (Bold)
+            item.innerHTML = `
+                <div style="display:flex; flex-direction:column; line-height:1.2;">
+                    <span class="col-original">${col}</span>
+                    <span class="col-alias">${colAlias}</span>
+                </div>
+            `;
+        } else {
+            // Normal display
+            item.innerText = col;
+        }
+        
+        // --- FIXED: Double Click to Rename (Inline Input) ---
+        item.ondblclick = (e) => {
+            e.stopPropagation();
+            
+            // Prevent multiple inputs
+            if(item.querySelector('input')) return;
+
+            const currentDisplay = colAlias || col;
+            
+            // Clear current content to show input
+            item.innerHTML = '';
+            item.draggable = false; // Disable drag while editing
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentDisplay;
+            input.className = 'alias-input';
+            
+            // Stop drag propagation from input
+            input.onclick = (ev) => ev.stopPropagation();
+            input.onmousedown = (ev) => ev.stopPropagation();
+
+            const finishEdit = () => {
+                const newVal = input.value.trim();
+                
+                if (newVal && newVal !== col) {
+                    // Update Alias
+                    if (!tableObj.columnAliases) tableObj.columnAliases = {};
+                    tableObj.columnAliases[col] = newVal;
+                } else {
+                    // Revert to original if empty or same as ID
+                    if (tableObj.columnAliases && tableObj.columnAliases[col]) {
+                        delete tableObj.columnAliases[col];
+                    }
+                }
+                
+                // Refresh UI
+                // We find the card again in case it moved or changed, though tableObj ref is stable
+                const currentCard = document.getElementById(tableObj.id);
+                if(currentCard) currentCard.remove();
+                renderTableCard(tableObj);
+                updateGeneratedSQL();
+            };
+
+            input.onblur = finishEdit;
+            input.onkeydown = (ev) => {
+                if(ev.key === 'Enter') {
+                    input.blur();
+                }
+            };
+
+            item.appendChild(input);
+            input.focus();
+        };
+
         item.dataset.table = tableObj.name; // Refers to source table name, NOT alias (for joins)
         item.dataset.col = col;
         item.draggable = true;
@@ -281,6 +353,9 @@ function renderTableCard(tableObj) {
         // FIX: Visual Selection Feedback
         item.onclick = (e) => {
             if(e.target.closest('.col-anchor')) return;
+            // Don't select if clicking input
+            if(e.target.tagName === 'INPUT') return;
+
             const idx = tableObj.selected.indexOf(col);
             if(idx > -1) {
                 tableObj.selected.splice(idx,1);
@@ -436,7 +511,15 @@ function updateGeneratedSQL() {
     tablesOnCanvas.forEach(t => {
         // Use Alias if present, else Name
         const tblRef = `[${t.alias}]`;
-        t.selected.forEach(c => selects.push(`${tblRef}.[${c}]`));
+        // FIX: Handle Column Aliases in SELECT
+        t.selected.forEach(c => {
+            const colAlias = t.columnAliases && t.columnAliases[c];
+            if (colAlias) {
+                selects.push(`${tblRef}.[${c}] AS [${colAlias}]`);
+            } else {
+                selects.push(`${tblRef}.[${c}]`);
+            }
+        });
     });
 
     const mainTable = tablesOnCanvas[0];
