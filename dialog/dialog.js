@@ -4,13 +4,18 @@
 let currentData = {
     tables: {}, 
     virtuals: {},
-    joins: [] // { id, sourceTable, sourceCol, targetTable, targetCol, type, op }
+    joins: [] 
 };
 
 let tablesOnCanvas = []; 
 let activeInput = null; 
 let currentEditCol = null;
-let currentJoinId = null; // For the join editor
+let currentJoinId = null;
+
+// Drag State for Moving Cards
+let dragSrcCard = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
 
 Office.onReady((info) => {
     if (info.host === Office.HostType.Excel) {
@@ -18,23 +23,24 @@ Office.onReady((info) => {
         
         Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, onMessageFromParent);
 
+        // UI Event Listeners
         document.getElementById('btn-add-table').onclick = () => Office.context.ui.messageParent(JSON.stringify({ action: "addTable" }));
         document.getElementById('btn-add-calc').onclick = () => openModal(null);
         document.getElementById('btn-cancel-col').onclick = closeModal;
         document.getElementById('btn-close-x').onclick = closeModal;
         document.getElementById('btn-save-col').onclick = saveVirtualColumn;
         document.getElementById('btn-add-rule').onclick = addConditionRow;
+
+        document.getElementById('btn-delete-join').onclick = deleteCurrentJoin;
+        document.getElementById('btn-save-join').onclick = saveCurrentJoin;
+        
+        // Apply Button (Run)
         document.getElementById('btn-apply').onclick = () => {
             const sql = document.getElementById('sql-editor-area').value;
-            // Send the SQL back to the main Task Pane
             Office.context.ui.messageParent(JSON.stringify({ action: "runQuery", sql: sql }));
         };
 
-        // Join Editor Buttons
-        document.getElementById('btn-delete-join').onclick = deleteCurrentJoin;
-        document.getElementById('btn-save-join').onclick = saveCurrentJoin;
-
-        // Visual Canvas Drop
+        // Canvas Drop
         const canvasZone = document.getElementById('visual-drop-zone');
         canvasZone.addEventListener('dragover', (e) => { e.preventDefault(); });
         canvasZone.addEventListener('drop', handleCanvasDrop);
@@ -47,8 +53,6 @@ Office.onReady((info) => {
 
         window.switchTab = switchTab;
         window.switchModalTab = switchModalTab;
-        
-        // Redraw lines on window resize
         window.onresize = renderJoins;
     }
 });
@@ -89,14 +93,12 @@ function renderIngredients() {
         container.appendChild(group);
     });
     
-    // Render Virtuals
     const virtualKeys = Object.keys(currentData.virtuals);
     if (virtualKeys.length > 0) {
         const vGroup = document.createElement('div');
         vGroup.className = 'table-group';
         vGroup.innerHTML = `<div class="table-header" style="color:#813a7c">▼ Calculated</div>`;
         virtualKeys.forEach(key => {
-            // Virtuals don't belong to a specific table in drag text usually, or we assume they rely on aliases.
             const chip = createChip(key, "CALC", true);
             vGroup.appendChild(chip);
         });
@@ -117,13 +119,32 @@ function createChip(colName, type, isVirtual, tableName="") {
     
     chip.innerHTML = `<div class="chip-icon ${iconClass}">${iconText}</div><div class="chip-name">${colName}</div>`;
     
-    // Click behavior
+    // FIX: Type Toggle / Edit Formula Logic
     const iconDiv = chip.querySelector('.chip-icon');
     if (isVirtual || type === "CALC") {
-        iconDiv.onclick = () => openModal(colName);
+        iconDiv.onclick = (e) => { e.stopPropagation(); openModal(colName); };
         iconDiv.title = "Edit Formula";
+    } else {
+        // FIX: Ensure this updates the correct table's type definition
+        iconDiv.onclick = (e) => { e.stopPropagation(); toggleType(colName, tableName); };
+        iconDiv.title = "Toggle Type";
     }
     return chip;
+}
+
+// FIX: Toggle Type handles specific table
+function toggleType(colName, tableName) {
+    const types = ["TEXT", "NUMBER", "DATE"];
+    // Fallback to "Current Table" if tableName missing (legacy)
+    const targetTable = tableName || "Current Table";
+    
+    if (currentData.tables[targetTable]) {
+        let current = currentData.tables[targetTable].colTypes[colName] || "TEXT";
+        let idx = types.indexOf(current);
+        let next = types[(idx + 1) % types.length];
+        currentData.tables[targetTable].colTypes[colName] = next;
+        renderIngredients();
+    }
 }
 
 // --- VISUAL CANVAS LOGIC ---
@@ -132,23 +153,44 @@ function handleCanvasDrop(e) {
     const rawData = e.dataTransfer.getData("application/json");
     if (!rawData) return;
     const data = JSON.parse(rawData);
-    if (data.type === "table") addTableToCanvas(data.name, e.clientX, e.clientY);
+    
+    if (data.type === "table") {
+        addTableToCanvas(data.name, e.clientX, e.clientY);
+    } else if (data.type === "move_card") {
+        // FIX: Move Existing Card
+        const card = tablesOnCanvas.find(t => t.id === data.id);
+        if (card) {
+            const canvasRect = document.getElementById('visual-drop-zone').getBoundingClientRect();
+            card.left = e.clientX - canvasRect.left - dragOffsetX;
+            card.top = e.clientY - canvasRect.top - dragOffsetY;
+            // Bound checks
+            if(card.left < 0) card.left = 0;
+            if(card.top < 0) card.top = 0;
+            
+            const cardEl = document.getElementById(card.id);
+            cardEl.style.left = card.left + "px";
+            cardEl.style.top = card.top + "px";
+            renderJoins(); // Redraw lines
+        }
+    }
 }
 
 function addTableToCanvas(tableName, x, y) {
-    // Simple positioning logic
+    // Allow duplicate tables? V3 -> No, for simplicity.
+    if (tablesOnCanvas.find(t => t.name === tableName)) return;
+
     const canvasRect = document.getElementById('visual-drop-zone').getBoundingClientRect();
-    let left = x ? (x - canvasRect.left) : (tablesOnCanvas.length * 250 + 50);
+    let left = x ? (x - canvasRect.left) : (tablesOnCanvas.length * 220 + 20);
     let top = y ? (y - canvasRect.top) : 50;
     
-    // Create Table Object
     const tableObj = {
         id: "tbl_" + new Date().getTime(),
         name: tableName,
+        alias: tableName, // Start alias same as name
         columns: currentData.tables[tableName].schema,
         selected: [],
-        left: Math.max(20, left),
-        top: Math.max(20, top)
+        left: Math.max(10, left),
+        top: Math.max(10, top)
     };
     tablesOnCanvas.push(tableObj);
     renderTableCard(tableObj);
@@ -162,14 +204,56 @@ function renderTableCard(tableObj) {
     card.id = tableObj.id;
     card.style.left = tableObj.left + "px";
     card.style.top = tableObj.top + "px";
-    card.style.position = ""; // Reset to CSS default (relative/absolute mix handling in css)
+    card.style.position = "absolute"; 
     
-    // Note: If CSS has position:absolute, we need to ensure it's set. 
-    // In current CSS, .table-card is position:absolute.
-    
+    // FIX: Draggable Header
     const header = document.createElement('div');
     header.className = 'card-header';
-    header.innerHTML = `<span>${tableObj.name}</span> <span class="card-close" onclick="removeTable('${tableObj.id}')">✖</span>`;
+    header.draggable = true;
+    
+    // FIX: Editable Title (Pencil)
+    header.innerHTML = `
+        <div style="display:flex; align-items:center; gap:5px; flex:1;">
+            <span class="title-text">${tableObj.alias}</span>
+            <span class="edit-alias" style="font-size:10px; cursor:pointer; opacity:0.7;">✎</span>
+        </div>
+        <span class="card-close" onclick="removeTable('${tableObj.id}')">✖</span>
+    `;
+    
+    // Alias Edit Logic
+    const titleSpan = header.querySelector('.title-text');
+    const editBtn = header.querySelector('.edit-alias');
+    
+    editBtn.onclick = (e) => {
+        e.stopPropagation(); // Don't drag
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = tableObj.alias;
+        input.style.width = "100%";
+        input.style.color = "black";
+        
+        input.onblur = () => {
+            tableObj.alias = input.value.trim() || tableObj.name;
+            titleSpan.innerText = tableObj.alias;
+            input.replaceWith(titleSpan);
+            editBtn.style.display = "inline";
+            updateGeneratedSQL();
+        };
+        input.onkeydown = (ev) => { if(ev.key==='Enter') input.blur(); };
+        
+        editBtn.style.display = "none";
+        titleSpan.replaceWith(input);
+        input.focus();
+    };
+
+    // Drag Start Logic
+    header.ondragstart = (e) => {
+        const rect = card.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        e.dataTransfer.setData("application/json", JSON.stringify({ type: "move_card", id: tableObj.id }));
+    };
+
     card.appendChild(header);
 
     const body = document.createElement('div');
@@ -178,16 +262,26 @@ function renderTableCard(tableObj) {
     tableObj.columns.forEach(col => {
         const item = document.createElement('div');
         item.className = 'col-item';
+        // Add selected class if already selected
+        if(tableObj.selected.includes(col)) {
+            item.classList.add('selected');
+        }
         item.innerText = col;
-        item.dataset.table = tableObj.name;
+        item.dataset.table = tableObj.name; // Refers to source table name, NOT alias (for joins)
         item.dataset.col = col;
         item.draggable = true;
 
+        // FIX: Visual Selection Feedback
         item.onclick = (e) => {
             if(e.target.closest('.col-anchor')) return;
             const idx = tableObj.selected.indexOf(col);
-            if(idx > -1) { tableObj.selected.splice(idx,1); item.classList.remove('selected'); }
-            else { tableObj.selected.push(col); item.classList.add('selected'); }
+            if(idx > -1) {
+                tableObj.selected.splice(idx,1);
+                item.classList.remove('selected');
+            } else {
+                tableObj.selected.push(col);
+                item.classList.add('selected');
+            }
             updateGeneratedSQL();
         };
 
@@ -195,14 +289,15 @@ function renderTableCard(tableObj) {
             e.stopPropagation();
             e.dataTransfer.setData("application/json", JSON.stringify({
                 type: "join_link",
-                tableName: tableObj.name,
+                tableName: tableObj.name, // Use original name for joining logic
+                alias: tableObj.alias,
                 colName: col
             }));
         };
 
         item.ondragover = (e) => { e.preventDefault(); item.style.background = "#e6f2ff"; };
         item.ondragleave = (e) => { item.style.background = ""; };
-        item.ondrop = (e) => handleJoinDrop(e, tableObj.name, col);
+        item.ondrop = (e) => handleJoinDrop(e, tableObj.name, col); // Pass original name
 
         item.innerHTML += `<div class="col-anchor"></div>`;
         body.appendChild(item);
@@ -234,7 +329,7 @@ function handleJoinDrop(e, targetTable, targetCol) {
     if (!raw) return;
     const src = JSON.parse(raw);
     if (src.type !== "join_link") return;
-    if (src.tableName === targetTable) return;
+    if (src.tableName === targetTable) return; 
 
     const newJoin = {
         id: "j_" + new Date().getTime(),
@@ -258,6 +353,9 @@ function renderJoins() {
     const canvasRect = document.getElementById('visual-drop-zone').getBoundingClientRect();
 
     currentData.joins.forEach(join => {
+        // Need to find the Card by TableName first, because there might be multiple instances?
+        // For V3 we assume unique table names.
+        // We need to look up the DOM element based on dataset
         const srcEl = document.querySelector(`.col-item[data-table="${join.sourceTable}"][data-col="${join.sourceCol}"]`);
         const tgtEl = document.querySelector(`.col-item[data-table="${join.targetTable}"][data-col="${join.targetCol}"]`);
 
@@ -265,9 +363,9 @@ function renderJoins() {
             const srcRect = srcEl.getBoundingClientRect();
             const tgtRect = tgtEl.getBoundingClientRect();
 
-            const x1 = (srcRect.right - canvasRect.left) - 10;
+            const x1 = (srcRect.right - canvasRect.left) - 5;
             const y1 = (srcRect.top - canvasRect.top) + (srcRect.height / 2);
-            const x2 = (tgtRect.left - canvasRect.left) + 10;
+            const x2 = (tgtRect.left - canvasRect.left) + 5;
             const y2 = (tgtRect.top - canvasRect.top) + (tgtRect.height / 2);
 
             const cp1x = x1 + 50; const cp1y = y1;
@@ -284,7 +382,6 @@ function renderJoins() {
     });
 }
 
-// --- JOIN EDITOR ---
 function editJoin(id, x, y) {
     currentJoinId = id;
     const join = currentData.joins.find(j => j.id === id);
@@ -292,7 +389,6 @@ function editJoin(id, x, y) {
 
     const pop = document.getElementById('join-editor');
     pop.style.display = "block";
-    
     const popRect = pop.getBoundingClientRect();
     if(x + 260 > window.innerWidth) x -= 260;
     pop.style.left = x + "px";
@@ -322,7 +418,7 @@ function deleteCurrentJoin() {
     document.getElementById('join-editor').style.display = "none";
 }
 
-// --- SQL GEN ---
+// --- SQL GEN (Updated for Aliases) ---
 function updateGeneratedSQL() {
     if(tablesOnCanvas.length === 0) {
         document.getElementById('sql-editor-area').value = "";
@@ -331,47 +427,60 @@ function updateGeneratedSQL() {
 
     let selects = [];
     tablesOnCanvas.forEach(t => {
-        t.selected.forEach(c => selects.push(`[${t.name}].[${c}]`));
+        // Use Alias if present, else Name
+        const tblRef = `[${t.alias}]`;
+        t.selected.forEach(c => selects.push(`${tblRef}.[${c}]`));
     });
 
     const mainTable = tablesOnCanvas[0];
-    let sql = `SELECT \n    ${selects.length ? selects.join(', ') : '*'} \nFROM [${mainTable.name}]`;
+    // FROM [RealName] AS [Alias]
+    let sql = `SELECT \n    ${selects.length ? selects.join(', ') : '*'} \nFROM [${mainTable.name}] AS [${mainTable.alias}]`;
 
+    // Process Joins
     let joinGroups = {}; 
     let joinOrder = []; 
 
     currentData.joins.forEach(j => {
-        if (!joinGroups[j.targetTable]) {
-            joinGroups[j.targetTable] = {
+        // Find target table object to get its alias
+        const targetObj = tablesOnCanvas.find(t => t.name === j.targetTable);
+        const sourceObj = tablesOnCanvas.find(t => t.name === j.sourceTable);
+        
+        if(!targetObj || !sourceObj) return;
+
+        const targetAlias = targetObj.alias;
+        const sourceAlias = sourceObj.alias;
+
+        if (!joinGroups[targetAlias]) {
+            joinGroups[targetAlias] = {
                 type: j.type,
                 conditions: [],
-                sourceTable: j.sourceTable
+                realName: j.targetTable
             };
-            joinOrder.push(j.targetTable);
+            joinOrder.push(targetAlias);
         }
         
-        joinGroups[j.targetTable].conditions.push(
-            `[${j.sourceTable}].[${j.sourceCol}] ${j.op} [${j.targetTable}].[${j.targetCol}]`
+        joinGroups[targetAlias].conditions.push(
+            `[${sourceAlias}].[${j.sourceCol}] ${j.op} [${targetAlias}].[${j.targetCol}]`
         );
     });
 
-    joinOrder.forEach(targetName => {
-        const grp = joinGroups[targetName];
+    joinOrder.forEach(targetAlias => {
+        const grp = joinGroups[targetAlias];
         const combinedConditions = grp.conditions.join(" AND \n    ");
-        sql += `\n${grp.type} [${targetName}] ON ${combinedConditions}`;
+        sql += `\n${grp.type} [${grp.realName}] AS [${targetAlias}] ON ${combinedConditions}`;
     });
 
+    // Orphans
     tablesOnCanvas.slice(1).forEach(t => {
         const isJoined = currentData.joins.some(j => j.targetTable === t.name || j.sourceTable === t.name);
         if (!isJoined) {
-            sql += `,\n[${t.name}]`;
+            sql += `,\n[${t.name}] AS [${t.alias}]`;
         }
     });
 
     document.getElementById('sql-editor-area').value = sql;
 }
 
-// --- DRAG TO SQL (TEXT) ---
 function handleSqlDrop(e) {
     e.preventDefault(); e.stopPropagation();
     document.getElementById('sql-editor-area').style.border = "none";
@@ -395,21 +504,18 @@ function handleSqlDrop(e) {
     el.focus();
 }
 
-// --- MODAL LOGIC (UPDATED FOR MULTI-TABLE) ---
 function openModal(colName) {
     document.getElementById("modal-add-col").style.display = "flex";
     const nameInput = document.getElementById("new-col-name");
     const formulaInput = document.getElementById("new-col-formula");
     const saveBtn = document.getElementById("btn-save-col");
 
-    // Populate Modal Chips with columns from ALL tables
     const modalChipList = document.getElementById("modal-chip-list");
     modalChipList.innerHTML = "";
     
     let allCols = [];
     Object.keys(currentData.tables).forEach(tableName => {
         currentData.tables[tableName].schema.forEach(col => {
-            // We store object to know type
             allCols.push({ 
                 name: col, 
                 type: currentData.tables[tableName].colTypes[col] || "TEXT" 
@@ -417,7 +523,6 @@ function openModal(colName) {
         });
     });
     
-    // Add Virtuals
     Object.keys(currentData.virtuals).forEach(v => {
         allCols.push({ name: v, type: "CALC", isVirtual: true });
     });
@@ -430,7 +535,6 @@ function openModal(colName) {
         chip.style.margin = "2px";
         chip.style.transform = "scale(0.9)";
         
-        // Icons logic
         let iconClass = "type-txt", iconText = "ABC";
         if(colData.isVirtual) { iconClass = "type-calc"; iconText = "ƒx"; }
         else if(colData.type === "NUMBER") { iconClass = "type-num"; iconText = "123"; }
@@ -575,7 +679,6 @@ function switchModalTab(tabName) {
     }
 }
 
-// Global Exports
 window.updateJoinType = (id, type) => {
     const join = currentData.joins.find(j => j.id === id);
     if(join) { join.type = type; updateGeneratedSQL(); }
@@ -585,4 +688,15 @@ window.removeJoin = (id) => {
     renderJoins();
     updateGeneratedSQL();
 };
-window.removeTable = removeTable;
+window.removeTable = (id) => {
+    // Defined in file but exposed here
+    // Already defined in function scope above, good to go
+    const tbl = tablesOnCanvas.find(t => t.id === id);
+    if(tbl) {
+        currentData.joins = currentData.joins.filter(j => j.sourceTable !== tbl.name && j.targetTable !== tbl.name);
+    }
+    tablesOnCanvas = tablesOnCanvas.filter(t => t.id !== id);
+    document.getElementById(id).remove();
+    renderJoins();
+    updateGeneratedSQL();
+};
