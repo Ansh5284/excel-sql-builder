@@ -1,5 +1,4 @@
 /* global document, Excel, Office, alasql, Sortable, console, setTimeout */
-
 // STATE VARIABLES
 let globalData = [];
 let globalHeaders = []; // Real Excel Headers
@@ -8,6 +7,10 @@ let virtualColumns = {}; // { "MyCol": "[Price]*[Qty]" }
 let outputRangeAddress = null;
 let activeInput = null; // Track focused input GLOBALLY for modal insertion
 let currentEditCol = null; 
+
+// NEW: Registry to store all loaded tables for SQL execution
+// Format: { "Table_Sheet1_A1": [ {Col1: Val, ...}, ... ], "Current Table": [...] }
+let tableRegistry = {}; 
 
 // FUNCTION DEFINITIONS
 const FUNC_GROUPS = {
@@ -53,7 +56,7 @@ Office.onReady((info) => {
 let dialog = null;
 
 function openAdvancedEditor() {
-    const fullUrl = "https://ansh5284.github.io/excel-sql-builder/dialog/dialog.html";
+    const fullUrl = "https://localhost:3000/dialog.html";
 
     Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
         function (asyncResult) {
@@ -63,10 +66,8 @@ function openAdvancedEditor() {
                 dialog = asyncResult.value;
                 dialog.addEventHandler(Office.EventType.DialogMessageReceived, processDialogMessage);
                 
-                // Helper to send data
-                const sendInitData = () => {
-                    if (!dialog) return;
-                    // Initial load sends the current TaskPane data
+                // Send current schema to dialog
+                setTimeout(() => {
                     const message = JSON.stringify({
                         type: "init",
                         schema: globalHeaders,
@@ -74,11 +75,19 @@ function openAdvancedEditor() {
                         colTypes: globalColTypes
                     });
                     dialog.messageChild(message);
-                };
-
-                // RACE CONDITION FIX: Send multiple times to ensure Dialog is ready to receive
-                setTimeout(sendInitData, 1000); 
-                setTimeout(sendInitData, 3000); 
+                }, 1000); 
+                setTimeout(() => {
+                    // Retry just in case
+                    if(dialog) {
+                        const message = JSON.stringify({
+                            type: "init",
+                            schema: globalHeaders,
+                            virtuals: virtualColumns,
+                            colTypes: globalColTypes
+                        });
+                        dialog.messageChild(message);
+                    }
+                }, 3000);
             }
         }
     );
@@ -92,7 +101,6 @@ function processDialogMessage(arg) {
         dialog = null;
     }
     else if (message.action === "addTable") {
-        // Dialog requested a new table from Excel selection
         fetchTableForDialog();
     }
     else if (message.action === "runQuery") {
@@ -100,7 +108,33 @@ function processDialogMessage(arg) {
     }
 }
 
-// Helper to fetch selection and send to Dialog without affecting TaskPane state
+// FIX: Execution Logic for Multi-Table
+function executeAdvancedQuery(sql) {
+    console.log("Executing Advanced Query:", sql);
+    
+    // 1. Register ALL tables from registry into AlasQL
+    Object.keys(tableRegistry).forEach(tableName => {
+        // Drop if exists to ensure fresh data
+        try { alasql(`DROP TABLE IF EXISTS [${tableName}]`); } catch(e){}
+        
+        alasql(`CREATE TABLE [${tableName}]`);
+        alasql.tables[tableName].data = tableRegistry[tableName];
+        console.log(`Registered table: [${tableName}] with ${tableRegistry[tableName].length} rows.`);
+    });
+
+    // 2. Execute
+    try {
+        let result = alasql(sql);
+        console.log("Result Rows:", result.length);
+        writeResult(result);
+    } catch (err) {
+        console.error("SQL Error:", err);
+        // Show error in TaskPane output for feedback
+        document.getElementById("txt-output").value = "Error: " + err.message;
+    }
+}
+
+// FIX: Helper to fetch selection and STORE IT locally
 async function fetchTableForDialog() {
     await Excel.run(async (context) => {
         const range = context.workbook.getSelectedRange();
@@ -109,8 +143,7 @@ async function fetchTableForDialog() {
 
         if (!range.values || range.values.length < 2) return;
 
-        // Use a generic name like "Table_Sheet1_A1" or let user rename later
-        // For now, we sanitize the address to make a valid SQL table name
+        // Generate Name
         let rawName = range.address.split("!").pop().replace(/[^a-zA-Z0-9]/g, '');
         let tableName = "Table_" + rawName; 
 
@@ -129,11 +162,12 @@ async function fetchTableForDialog() {
             headers.push(clean);
         });
 
-        // 2. Process Types & Data
+        // 2. Process Data & Types
         const firstRowData = range.values[1];
         const firstRowFormat = range.numberFormat[1];
         let colTypes = {};
-
+        
+        // Detect types
         headers.forEach((header, index) => {
             let fmt = firstRowFormat[index];
             if (typeof fmt === 'string' && fmt.toLowerCase().includes('d') && fmt.toLowerCase().includes('m')) {
@@ -145,7 +179,30 @@ async function fetchTableForDialog() {
             }
         });
 
-        // Send back to Dialog
+        // Build Data Array
+        let tableData = range.values.slice(1).map(row => {
+            let obj = {};
+            headers.forEach((h, i) => {
+                let val = row[i];
+                let type = colTypes[h];
+
+                if (type === "NUMBER") {
+                    val = cleanNumber(val); 
+                } else if (type === "DATE") {
+                    if (typeof val === 'number') val = excelSerialToDate(val);
+                    else val = String(val || "");
+                } else {
+                    val = (val === null || val === undefined) ? "" : String(val);
+                }
+                obj[h] = val;
+            });
+            return obj;
+        });
+
+        // 3. STORE IN REGISTRY
+        tableRegistry[tableName] = tableData;
+
+        // 4. Send Schema to Dialog
         if (dialog) {
             const msg = JSON.stringify({
                 type: "addTableSuccess",
@@ -157,6 +214,8 @@ async function fetchTableForDialog() {
         }
     }).catch(console.error);
 }
+
+//added
 
 // --- AGGRESSIVE NUMBER CLEANER ---
 function cleanNumber(val) {
@@ -237,6 +296,9 @@ async function loadColumnsFromSelection() {
       });
       return obj;
     });
+
+    // STORE IN REGISTRY (The fix for "Current Table")
+    tableRegistry["Current Table"] = globalData;
 
     renderSourceList();
     updateSQLPreview();
@@ -1125,7 +1187,7 @@ function runQuery() {
         writeResult(result);
     } catch (err) {
         console.error("SQL Error:", err);
-        document.getElementById("txt-output").value = "SQL Error: " + err.message + " (Check Console for details)";
+        document.getElementById("txt-output").value = "SQL Error: " + err.message;
     }
 }
 
@@ -1170,29 +1232,4 @@ async function writeResult(data) {
 
 function handleError(error) {
     console.error("Excel Error: " + error);
-}
-function executeAdvancedQuery(sql) {
-    console.log("Advanced Query:", sql);
-    
-    // 1. Prepare AlasQL
-    // We register the main loaded data as a table so the SQL "FROM [Current Table]" works
-    alasql.promise(`CREATE TABLE IF NOT EXISTS [Current Table]`);
-    alasql.tables['Current Table'].data = globalData;
-
-    // 2. Execute
-    try {
-        // If the query uses ?, pass globalData. Otherwise run directly.
-        let result;
-        if (sql.includes("?")) {
-            result = alasql(sql, [globalData]);
-        } else {
-            result = alasql(sql);
-        }
-        
-        console.log("Rows:", result.length);
-        writeResult(result); // Reuse your existing write function
-    } catch (err) {
-        console.error("SQL Error:", err);
-        // Optional: Send error back to dialog? For now just log.
-    }
 }
