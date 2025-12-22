@@ -37,7 +37,14 @@ Office.onReady((info) => {
         // Apply Button (Run)
         document.getElementById('btn-apply').onclick = () => {
             const sql = document.getElementById('sql-editor-area').value;
-            Office.context.ui.messageParent(JSON.stringify({ action: "runQuery", sql: sql }));
+            const usedTables = [...new Set(tablesOnCanvas.map(t => t.name))];
+            
+
+            Office.context.ui.messageParent(JSON.stringify({ 
+                action: "runQuery", 
+                sql: sql,
+                tables: usedTables // Sending this list allows Task Pane to prepare the data context
+            }));
         };
 
         // Canvas Drop
