@@ -56,7 +56,7 @@ Office.onReady((info) => {
 let dialog = null;
 
 function openAdvancedEditor() {
-    const fullUrl = "https://localhost:3000/dialog.html";
+    const fullUrl = "https://ansh5284.github.io/excel-sql-builder/dialog/dialog.html";
 
     Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
         function (asyncResult) {
@@ -104,25 +104,37 @@ function processDialogMessage(arg) {
         fetchTableForDialog();
     }
     else if (message.action === "runQuery") {
-        executeAdvancedQuery(message.sql);
+        console.log (message.sql, message.tables)
+        executeAdvancedQuery(message.sql,  message.tables);
     }
 }
 
 // FIX: Execution Logic for Multi-Table
-function executeAdvancedQuery(sql) {
+function executeAdvancedQuery(sql, tables) {
     console.log("Executing Advanced Query:", sql);
     
-    // 1. Register ALL tables from registry into AlasQL
-    Object.keys(tableRegistry).forEach(tableName => {
-        // Drop if exists to ensure fresh data
-        try { alasql(`DROP TABLE IF EXISTS [${tableName}]`); } catch(e){}
-        
-        alasql(`CREATE TABLE [${tableName}]`);
-        alasql.tables[tableName].data = tableRegistry[tableName];
-        console.log(`Registered table: [${tableName}] with ${tableRegistry[tableName].length} rows.`);
+    // 1. Determine which tables to register
+    // If the Advanced Editor sent a specific list of tables, use that.
+    // Otherwise, fallback to registering ALL tables in the registry.
+    const tablesToRegister = (tables && Array.isArray(tables) && tables.length > 0) 
+        ? tables 
+        : Object.keys(tableRegistry);
+
+    // 2. Register these tables into AlasQL
+    tablesToRegister.forEach(tableName => {
+        if (tableRegistry[tableName]) {
+            // Drop if exists to ensure fresh data
+            try { alasql(`DROP TABLE IF EXISTS [${tableName}]`); } catch(e){}
+            
+            alasql(`CREATE TABLE [${tableName}]`);
+            alasql.tables[tableName].data = tableRegistry[tableName];
+            console.log(`Registered table: [${tableName}] with ${tableRegistry[tableName].length} rows.`);
+        } else {
+             console.warn(`Warning: Data for table [${tableName}] is missing from registry.`);
+        }
     });
 
-    // 2. Execute
+    // 3. Execute
     try {
         let result = alasql(sql);
         console.log("Result Rows:", result.length);
