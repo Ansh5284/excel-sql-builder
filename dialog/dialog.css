@@ -7,6 +7,8 @@
     --text: #323130;
     --code-bg: #1e1e1e;
     --error-red: #a80000;
+    --sort-green: #107c10;
+    --sort-bg: #e6ffec;
 }
 
 body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -24,6 +26,8 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); he
 .workspace { flex: 1; display: flex; overflow: hidden; }
 .sidebar { width: 250px; background: var(--white); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
 .sidebar-actions { padding: 10px; border-bottom: 1px solid var(--border); display: flex; gap: 5px; flex-wrap: wrap; }
+.tree-view { flex: 1; overflow-y: auto; padding: 10px; }
+
 .main-area { flex: 1; display: flex; position: relative; overflow: hidden; }
 .canvas-view { flex: 1; width: 100%; height: 100%; }
 
@@ -111,6 +115,17 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); he
     font-weight: 700;
 }
 
+/* Inline Edit Input */
+.alias-input {
+    width: 100%;
+    font-size: 11px;
+    padding: 2px;
+    border: 1px solid var(--brand);
+    border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0,120,212,0.5);
+    outline: none;
+}
+
 /* FIX: Stronger selector for selected state so it turns blue */
 .col-item.selected { 
     background-color: #c7e0f4 !important; 
@@ -122,6 +137,44 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); he
 /* Dot for connection anchor */
 .col-anchor { width: 8px; height: 8px; background: #bbb; border-radius: 50%; margin-top: 4px; display: none; }
 .col-item:hover .col-anchor { display: block; background: var(--brand); }
+
+/* SORT ACTIONS */
+.col-actions { 
+    display: none; 
+    margin-left: 5px;
+    align-items: center;
+}
+/* Show actions on hover OR if active sorting exists */
+.col-item:hover .col-actions, .col-item.has-sort .col-actions { 
+    display: flex; 
+}
+
+.btn-sort { 
+    cursor: pointer; 
+    color: #ccc; 
+    font-size: 12px; 
+    padding: 2px;
+    border-radius: 3px;
+}
+.btn-sort:hover { color: #333; background: #eee; }
+
+/* Active Sort Style */
+.btn-sort.active { 
+    color: var(--sort-green); 
+    font-weight: bold; 
+    display: block; 
+}
+
+.sort-badge {
+    font-size: 9px;
+    vertical-align: text-top;
+    margin-left: 3px;
+    background: var(--sort-bg);
+    color: var(--sort-green);
+    border: 1px solid #b7eb8f;
+    padding: 0 3px;
+    border-radius: 3px;
+}
 
 /* JOIN POPOVER */
 .join-popover {
@@ -144,6 +197,12 @@ body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); he
 /* Buttons & Inputs */
 .btn-icon { background: var(--brand-light); color: var(--brand); border: 1px solid transparent; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; }
 .btn-icon:hover { background: #deecf9; border-color: var(--brand); }
+.btn-special { background: #fff0f1; color: #d13438; border-color: #fdd8db; }
+.btn-special:hover { background: #fde7e9; border-color: #d13438; }
+.btn-union { background: #e6fffc; color: #008075; border-color: #b5f5ec; }
+.btn-union:hover { background: #b5f5ec; border-color: #008075; }
+
+
 .btn-xs { padding: 4px 8px; border-radius: 3px; border: none; cursor: pointer; font-size: 11px; font-weight: 600; }
 .btn-danger { background: #fde7e9; color: #a80000; border: 1px solid #fde7e9; }
 .btn-danger:hover { background: #a80000; color: white; }
@@ -172,3 +231,70 @@ select { padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size
 .formula-def { width: 100%; height: 80px; }
 .cond-row { display: flex; gap: 5px; margin-bottom: 5px; }
 .cond-input-col { flex: 1; }
+
+/* UNION BUILDER STYLES */
+.union-sidebar {
+    width: 200px;
+    background: #f8f8f8;
+    border-right: 1px solid var(--border);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow-y: auto;
+}
+.sidebar-title { font-size: 11px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 5px; }
+
+.table-item {
+    padding: 8px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.table-item:hover { border-color: var(--brand); background: var(--brand-light); }
+.add-icon { color: var(--brand); font-weight: bold; font-size: 16px; }
+
+.union-config-area {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+}
+
+.step-box {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 15px;
+}
+.step-label { font-weight: bold; margin-bottom: 10px; font-size: 13px; color: #333; display: flex; align-items: center; gap: 8px; }
+.step-number { background: var(--brand); color: white; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+
+.mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.mapping-table th { text-align: left; padding: 8px; border-bottom: 2px solid #eee; color: #666; }
+.mapping-table td { padding: 8px; border-bottom: 1px solid #eee; }
+.mapping-table td:first-child { font-weight: bold; color: var(--brand); }
+
+/* NEW: Delete Icon */
+.delete-icon {
+    color: #a80000;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    margin-left: 5px;
+}
+.delete-icon:hover {
+    color: red;
+}
+
