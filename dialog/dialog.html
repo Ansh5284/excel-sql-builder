@@ -26,6 +26,9 @@
             <div class="sidebar-actions">
                 <button class="btn-icon" id="btn-add-table"><span>📅</span> Add Table</button>
                 <button class="btn-icon" id="btn-add-calc"><span>ƒx</span> Add Calc</button>
+                <div style="flex-basis: 100%; height: 5px;"></div> <!-- Spacer -->
+                <button class="btn-icon btn-special" id="btn-save-view-cte"><span>⚡</span> Save View as CTE</button>
+                <button class="btn-icon btn-union" id="btn-create-union"><span>🔗</span> Create Union</button>
             </div>
             <div class="tree-view" id="ingredients-list">
                 <div class="placeholder-text">Loading Schema...</div>
@@ -39,7 +42,7 @@
                     <!-- SVG LAYER FOR LINES -->
                     <svg id="connections-layer"></svg>
                     
-                    <div class="empty-state">Drag Tables here, then drag columns to connect them.</div>
+                    <div class="empty-state">Drag Tables here, connect them, then click "Save View as CTE" to build logic steps.</div>
                 </div>
             </div>
 
@@ -88,7 +91,7 @@
         </div>
     </div>
 
-    <!-- MODAL: ADD VIRTUAL COLUMN (Same as before) -->
+    <!-- MODAL: ADD VIRTUAL COLUMN -->
     <div id="modal-add-col" class="modal-overlay" style="display:none;">
         <div class="modal-card">
             <div class="modal-header">
@@ -126,7 +129,103 @@
             </div>
         </div>
     </div>
- <script src="dialog.js" type="text/javascript"></script>
-</body>
 
+    <!-- MODAL: NAME CTE -->
+    <div id="modal-name-cte" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="height: auto; max-width: 350px;">
+            <div class="modal-header">
+                <h3>Save View as CTE</h3>
+                <span class="close-modal-btn" id="btn-close-cte-name">✖</span>
+            </div>
+            <div class="modal-body-scroll">
+                <div style="padding:15px; display:flex; flex-direction:column; gap:10px;">
+                    <div>
+                        <label style="font-weight:bold; font-size:12px;">CTE Name</label>
+                        <input type="text" id="input-cte-name" placeholder="e.g. SalesSummary" style="width:100%;">
+                        <div style="font-size:11px; color:#666; margin-top:5px;">
+                            This will save the current canvas as a reusable table. The canvas will be cleared.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-confirm-save-cte" class="action-btn" style="width:100%;">Save & Clear Canvas</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRMATION -->
+    <div id="modal-confirm" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="height: auto; max-width: 350px;">
+            <div class="modal-header">
+                <h3 id="confirm-title">Confirm</h3>
+                <span class="close-modal-btn" id="btn-close-confirm">✖</span>
+            </div>
+            <div class="modal-body-scroll">
+                <div style="padding:15px;" id="confirm-message">
+                    Are you sure?
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="small-btn" id="btn-cancel-confirm">Cancel</button>
+                <button id="btn-confirm-yes" class="action-btn" style="width:auto;">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: UNION BUILDER (NEW) -->
+    <div id="modal-union-builder" class="modal-overlay" style="display:none;">
+        <div class="modal-card" style="width: 800px; max-width: 95vw; height: 700px;">
+            <div class="modal-header">
+                <h3>Create Union (CTE Generator)</h3>
+                <span class="close-modal-btn" id="btn-close-union">✖</span>
+            </div>
+            <div class="modal-body" style="display:flex; flex:1; overflow:hidden;">
+                <!-- Sidebar -->
+                <div class="union-sidebar">
+                    <div class="sidebar-title">Available Tables</div>
+                    <div id="union-source-list" class="union-source-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Config -->
+                <div class="union-config-area">
+                    <!-- Step 1 -->
+                    <div class="step-box">
+                        <div class="step-label"><span class="step-number">1</span> Master Table (Defines Output)</div>
+                        <select id="union-master-select">
+                            <option value="" disabled selected>Select a primary table...</option>
+                        </select>
+                        <div id="union-master-cols" style="margin-top:5px; font-size:11px; color:#666;"></div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="step-box" id="union-step-mapping" style="display:none;">
+                        <div class="step-label">
+                            <span class="step-number">2</span> Column Mapping
+                            <div style="margin-left:auto; font-weight:normal; font-size:12px;">
+                                <label><input type="radio" name="u_type" value="UNION ALL" checked> Union All</label>
+                                <label style="margin-left:10px;"><input type="radio" name="u_type" value="UNION"> Union (Distinct)</label>
+                            </div>
+                        </div>
+                        <div id="union-mapping-container"></div>
+                    </div>
+                    
+                    <!-- Step 3 Name -->
+                     <div class="step-box" id="union-step-name" style="display:none;">
+                        <div class="step-label"><span class="step-number">3</span> Name Result</div>
+                        <input type="text" id="union-result-name" placeholder="e.g. All_Sales_Data" style="width:100%;">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-cancel-union" class="small-btn">Cancel</button>
+                <button id="btn-save-union" class="action-btn">Save as Union CTE</button>
+            </div>
+        </div>
+    </div>
+
+</body>
 </html>
+
