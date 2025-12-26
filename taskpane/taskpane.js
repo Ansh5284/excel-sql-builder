@@ -1,4 +1,4 @@
-/* global document, Excel, Office, alasql, Sortable, console, setTimeout */
+/* global document, Excel, Office, Sortable, console, setTimeout, initSqlJs */
 // STATE VARIABLES
 let globalData = [];
 let globalHeaders = []; // Real Excel Headers
@@ -20,14 +20,85 @@ const FUNC_GROUPS = {
     STRING: ["LEN", "LOWER", "UPPER", "TRIM"]
 };
 
+/**
+ * Executes a SQL query using SQLite (sql.js)
+ * @param {string} query - The SQL query string
+ * @param {Object} tableData - An object mapping table names to data arrays.
+ */
+async function executeSqlite(query, tableData) {
+    // 1. Initialize SQLite
+    // Ensure the WASM file is accessible. Ideally, place sql-wasm.wasm in your project
+    // or use the CDN link below.
+    const config = {
+        locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${filename}`
+    };
+    
+    const SQL = await initSqlJs(config);
+    const db = new SQL.Database();
+
+    // REGISTER CUSTOM FUNCTIONS to match your existing logic
+    db.create_function("STRLEFT", (str, n) => typeof str === 'string' ? str.substring(0, n) : str);
+    db.create_function("STRRIGHT", (str, n) => typeof str === 'string' ? str.substring(str.length - n) : str);
+
+    try {
+        // 2. Load Data into Tables
+        for (const [tableName, rows] of Object.entries(tableData)) {
+            if (!rows || rows.length === 0) continue;
+
+            const columns = Object.keys(rows[0]);
+            
+            // Create Table
+            // SQLite is flexible with types, so we don't strictly need to define them here for this use case
+            const createSql = `CREATE TABLE [${tableName}] (${columns.map(c => `[${c}]`).join(', ')});`;
+            db.run(createSql);
+
+            // Insert Data (Prepare once, run many)
+            const placeholders = columns.map(() => '?').join(',');
+            const insertSql = `INSERT INTO [${tableName}] VALUES (${placeholders})`;
+            
+            const stmt = db.prepare(insertSql);
+            try {
+                rows.forEach(row => {
+                    const values = columns.map(col => row[col]);
+                    stmt.run(values);
+                });
+            } finally {
+                stmt.free();
+            }
+        }
+
+        // 3. Execute the actual User Query
+        const resultSets = db.exec(query);
+        
+        if (!resultSets || resultSets.length === 0) return [];
+
+        // 4. Convert SQLite result format back to JSON (Array of Objects)
+        const columns = resultSets[0].columns;
+        const values = resultSets[0].values;
+
+        const jsonResult = values.map(row => {
+            let obj = {};
+            columns.forEach((col, index) => {
+                obj[col] = row[index];
+            });
+            return obj;
+        });
+
+        return jsonResult;
+
+    } catch (error) {
+        console.error("SQLite Error:", error);
+        throw error;
+    } finally {
+        // 5. Close DB to free memory
+        db.close();
+    }
+}
+
 Office.onReady((info) => {
   if (info.host === Office.HostType.Excel) {
-    if (typeof alasql === 'undefined') console.error("AlasQL not loaded!");
-    else {
-        alasql.options.mysql = true;
-        alasql.fn.STRLEFT = (str, n) => typeof str === 'string' ? str.substring(0, n) : str;
-        alasql.fn.STRRIGHT = (str, n) => typeof str === 'string' ? str.substring(str.length - n) : str;
-    }
+    // REMOVED: AlasQL checks and custom function registration
+    // (These are now handled inside executeSqlite)
 
     initDragAndDrop();
     initLivePreviewListeners();
@@ -56,7 +127,7 @@ Office.onReady((info) => {
 let dialog = null;
 
 function openAdvancedEditor() {
-    const fullUrl = "https://ansh5284.github.io/excel-sql-builder/dialog/dialog.html";
+    const fullUrl = "https://localhost:3000/dialog.html";
 
     Office.context.ui.displayDialogAsync(fullUrl, { height: 80, width: 80, displayInIframe: true }, 
         function (asyncResult) {
@@ -109,26 +180,20 @@ function processDialogMessage(arg) {
     }
 }
 
-// FIX: Execution Logic for Multi-Table
-function executeAdvancedQuery(sql, tables) {
+// FIX: Execution Logic for Multi-Table (Migrated to SQLite)
+async function executeAdvancedQuery(sql, tables) {
     console.log("Executing Advanced Query:", sql);
     
-    // 1. Determine which tables to register
-    // If the Advanced Editor sent a specific list of tables, use that.
-    // Otherwise, fallback to registering ALL tables in the registry.
-    const tablesToRegister = (tables && Array.isArray(tables) && tables.length > 0) 
+    // 1. Determine which tables to use
+    const tablesToUse = (tables && Array.isArray(tables) && tables.length > 0) 
         ? tables 
         : Object.keys(tableRegistry);
 
-    // 2. Register these tables into AlasQL
-    tablesToRegister.forEach(tableName => {
+    // 2. Build Data Mapping for SQLite
+    let dataMapping = {};
+    tablesToUse.forEach(tableName => {
         if (tableRegistry[tableName]) {
-            // Drop if exists to ensure fresh data
-            try { alasql(`DROP TABLE IF EXISTS [${tableName}]`); } catch(e){}
-            
-            alasql(`CREATE TABLE [${tableName}]`);
-            alasql.tables[tableName].data = tableRegistry[tableName];
-            console.log(`Registered table: [${tableName}] with ${tableRegistry[tableName].length} rows.`);
+            dataMapping[tableName] = tableRegistry[tableName];
         } else {
              console.warn(`Warning: Data for table [${tableName}] is missing from registry.`);
         }
@@ -136,12 +201,11 @@ function executeAdvancedQuery(sql, tables) {
 
     // 3. Execute
     try {
-        let result = alasql(sql);
+        let result = await executeSqlite(sql, dataMapping);
         console.log("Result Rows:", result.length);
         writeResult(result);
     } catch (err) {
         console.error("SQL Error:", err);
-        // Show error in TaskPane output for feedback
         document.getElementById("txt-output").value = "Error: " + err.message;
     }
 }
@@ -226,8 +290,6 @@ async function fetchTableForDialog() {
         }
     }).catch(console.error);
 }
-
-//added
 
 // --- AGGRESSIVE NUMBER CLEANER ---
 function cleanNumber(val) {
@@ -1186,15 +1248,21 @@ function generateSQLQuery() {
     const limitVal = document.getElementById("txt-limit").value;
     const limitSql = limitVal ? ` LIMIT ${limitVal}` : "";
 
-    return `SELECT ${cols} FROM ? ${whereSql} ${groupSql} ${havingSql} ${orderSql} ${limitSql}`;
+    // MIGRATION: Changed FROM ? to FROM [Current Table] for SQLite
+    return `SELECT ${cols} FROM [Current Table] ${whereSql} ${groupSql} ${havingSql} ${orderSql} ${limitSql}`;
 }
 
-function runQuery() {
+// FIX: Execution Logic for Single Table (Migrated to SQLite)
+async function runQuery() {
     let sql = generateSQLQuery();
     console.log("Executing SQL:", sql);
 
     try {
-        const result = alasql(sql, [globalData]);
+        // Build Data Mapping for SQLite
+        // Key "Current Table" must match the name used in generateSQLQuery
+        const dataMapping = { "Current Table": globalData };
+        
+        let result = await executeSqlite(sql, dataMapping);
         console.log("Result Rows:", result.length);
         writeResult(result);
     } catch (err) {
