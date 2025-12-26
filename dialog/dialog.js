@@ -11,8 +11,15 @@ let currentData = {
 // UNION BUILDER STATE
 let unionState = {
     master: null,
-    others: [] // Array of { name: "TableName" }
+    others: [] 
 };
+
+// LOGIC DECK STATE
+let currentLogicState = {
+    WHERE: [],  // Array of Group/Rule objects
+    HAVING: []
+};
+let activeLogicTab = 'WHERE'; // 'WHERE' or 'HAVING'
 
 let tablesOnCanvas = []; 
 let activeInput = null; 
@@ -64,6 +71,15 @@ Office.onReady((info) => {
             closeConfirmModal();
         };
 
+        // Logic Deck Listeners
+        window.switchLogicTab = switchLogicTab;
+        window.toggleDeck = toggleDeck;
+        // Init Logic Deck Drop
+        const logicZone = document.getElementById('logicRootZone');
+        logicZone.ondragover = handleLogicDragOver;
+        logicZone.ondragleave = handleLogicDragLeave;
+        logicZone.ondrop = (e) => handleLogicDrop(e, null);
+
         // Apply Button (Run)
         document.getElementById('btn-apply').onclick = handleApply;
 
@@ -97,8 +113,358 @@ function onMessageFromParent(arg) {
     }
 }
 
-// --- UNION BUILDER LOGIC ---
+// --- LOGIC DECK LOGIC ---
 
+function switchLogicTab(tabName) {
+    activeLogicTab = tabName;
+    document.getElementById('tab-logic-where').classList.remove('active');
+    document.getElementById('tab-logic-having').classList.remove('active');
+    document.getElementById(`tab-logic-${tabName.toLowerCase()}`).classList.add('active');
+    renderLogicDeck();
+}
+
+function toggleDeck() {
+    const d = document.getElementById('logicDeck');
+    if (d.style.height === "35px") d.style.height = "350px";
+    else d.style.height = "35px";
+}
+
+function handleLogicDragOver(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    const targetGroup = ev.target.closest('.logic-group');
+    const targetRoot = ev.target.closest('.deck-body');
+
+    if (targetGroup) {
+        targetGroup.classList.add('drag-over-group');
+        if(targetRoot) targetRoot.classList.remove('drag-over');
+    } else if (targetRoot) {
+        targetRoot.classList.add('drag-over');
+    }
+}
+
+function handleLogicDragLeave(ev) {
+    if(ev.target.classList.contains('logic-group')) {
+        ev.target.classList.remove('drag-over-group');
+    }
+    if(ev.target.id === 'logicRootZone') {
+        ev.target.classList.remove('drag-over');
+    }
+}
+
+function handleLogicDrop(ev, parentGroup) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    document.querySelectorAll('.drag-over, .drag-over-group').forEach(el => {
+        el.classList.remove('drag-over');
+        el.classList.remove('drag-over-group');
+    });
+
+    const raw = ev.dataTransfer.getData("application/json");
+    if(!raw) return;
+    const payload = JSON.parse(raw); // { type, tableName, colName, alias } OR { type: 'table', name: 'CTE' }
+
+    // Convert payload to Logic Rule Format
+    let newRule = {
+        type: 'rule',
+        left: null,
+        op: '=',
+        right: { type: 'value', val: '' }
+    };
+
+    if (payload.type === 'join_link') {
+        // Dragged a column
+        const alias = payload.alias || payload.tableName;
+        newRule.left = { type: 'col', val: `[${alias}].[${payload.colName}]`, label: payload.colName };
+    } else if (payload.type === 'table') {
+        // Dragged a CTE (assuming we allow dropping CTE as left operand? Probably rare, usually right)
+        // Let's assume user dropped it onto root to start a rule
+        if (currentData.ctes[payload.name]) {
+             // CTEs usually go on Right side (IN (Select...)) but here we initiate rule
+             // Let's default left to empty and let them drop? Or create a rule where CTE is right?
+             // Prototype logic allowed dragging Column to start. 
+             // If CTE dropped, maybe we can't start a rule easily without knowing col.
+             // Let's just return if not a column for now as root drop
+             return;
+        }
+    } else {
+        return;
+    }
+
+    // Determine Insertion Point
+    const dropTargetGroup = ev.target.closest('.logic-group');
+    const targetArray = currentLogicState[activeLogicTab];
+
+    if (dropTargetGroup) {
+        // Dropped INSIDE a group -> Add to that group
+        // In real app we need to map DOM to Data. For this impl, we'll traverse via ID or re-render.
+        // Simplified: We need a way to link DOM group to data object.
+        // Let's use array index mapping or simple ID.
+        // Adding ID to data objects:
+        const groupId = dropTargetGroup.dataset.id;
+        const groupObj = findGroupById(targetArray, groupId);
+        if(groupObj) {
+            groupObj.children.push(newRule);
+        }
+    } else {
+        // Dropped on Root
+        if (targetArray.length === 0) {
+            // First item
+            targetArray.push(newRule);
+        } else {
+            // Wrap in new Parent Group
+            const newGroup = {
+                id: Date.now().toString(),
+                type: 'group',
+                op: 'AND', // Default outer join
+                children: [...targetArray, newRule] // Move existing + new
+            };
+            currentLogicState[activeLogicTab] = [newGroup]; // Replace root with this group
+        }
+    }
+    renderLogicDeck();
+    updateGeneratedSQL();
+}
+
+function findGroupById(arr, id) {
+    for(let item of arr) {
+        if(item.type === 'group') {
+            if(item.id === id) return item;
+            const found = findGroupById(item.children, id);
+            if(found) return found;
+        }
+    }
+    return null;
+}
+
+// --- RENDERING LOGIC DECK ---
+
+function renderLogicDeck() {
+    const root = document.getElementById('logicRootZone');
+    const emptyMsg = document.getElementById('logicEmptyMsg');
+    
+    // Clear content except empty msg
+    Array.from(root.children).forEach(c => { if(c.id !== 'logicEmptyMsg') c.remove(); });
+
+    const items = currentLogicState[activeLogicTab];
+    if (items.length === 0) {
+        emptyMsg.style.display = 'block';
+    } else {
+        emptyMsg.style.display = 'none';
+        items.forEach(item => {
+            if(item.type === 'group') {
+                root.appendChild(createGroupDOM(item));
+            } else {
+                root.appendChild(createRuleDOM(item, items)); // Pass array for delete
+            }
+        });
+    }
+}
+
+function createGroupDOM(groupData) {
+    const div = document.createElement('div');
+    div.className = 'logic-group';
+    div.dataset.id = groupData.id;
+    
+    div.ondragover = handleLogicDragOver;
+    div.ondragleave = handleLogicDragLeave;
+    div.ondrop = handleLogicDrop;
+
+    // Add children
+    groupData.children.forEach((child, index) => {
+        // Connector (if not first)
+        if (index > 0) {
+            const conn = document.createElement('div');
+            conn.className = 'logic-connector';
+            conn.innerText = groupData.op;
+            conn.dataset.op = groupData.op;
+            conn.onclick = (e) => {
+                e.stopPropagation();
+                groupData.op = groupData.op === "AND" ? "OR" : "AND";
+                renderLogicDeck();
+                updateGeneratedSQL();
+            };
+            div.appendChild(conn);
+        }
+
+        if (child.type === 'group') {
+            div.appendChild(createGroupDOM(child));
+        } else {
+            div.appendChild(createRuleDOM(child, groupData.children));
+        }
+    });
+
+    return div;
+}
+
+function createRuleDOM(rule, parentArray) {
+    const row = document.createElement('div');
+    row.className = 'logic-row';
+
+    // 1. Left (Column)
+    if (rule.left && rule.left.type === 'col') {
+        row.innerHTML = `<span class="col-badge">${rule.left.label}</span>`;
+    }
+
+    // 2. Operator
+    const opSelect = document.createElement('select');
+    opSelect.className = "op-select";
+    ["=", ">", "<", ">=", "<=", "<>", "IN", "NOT IN", "LIKE"].forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        opt.innerText = o;
+        if(o === rule.op) opt.selected = true;
+        opSelect.appendChild(opt);
+    });
+    opSelect.onchange = () => { rule.op = opSelect.value; updateGeneratedSQL(); };
+    row.appendChild(opSelect);
+
+    // 3. Right (Input/CTE)
+    const rightContainer = document.createElement('div');
+    // Decide what to show
+    if (rule.right.type === 'cte') {
+        const badge = document.createElement('span');
+        badge.className = 'cte-badge';
+        badge.innerText = `⚡ ${rule.right.label}`;
+        badge.onclick = () => {
+            // Remove CTE, revert to input
+            rule.right = { type: 'value', val: '' };
+            renderLogicDeck();
+            updateGeneratedSQL();
+        };
+        rightContainer.appendChild(badge);
+    } else {
+        const input = document.createElement('input');
+        input.className = "value-input";
+        input.value = rule.right.val;
+        input.placeholder = "Value or CTE";
+        input.oninput = (e) => { rule.right.val = e.target.value; updateGeneratedSQL(); };
+        
+        // Handle CTE Drop on Input
+        input.ondragover = (e) => { e.preventDefault(); input.classList.add('drag-over'); };
+        input.ondragleave = () => input.classList.remove('drag-over');
+        input.ondrop = (e) => handleValueDrop(e, rule);
+
+        rightContainer.appendChild(input);
+    }
+    row.appendChild(rightContainer);
+
+    // 4. Delete
+    const del = document.createElement('span');
+    del.className = "btn-del-rule";
+    del.innerHTML = "&times;";
+    del.onclick = () => {
+        const idx = parentArray.indexOf(rule);
+        if (idx > -1) parentArray.splice(idx, 1);
+        
+        // Clean up empty groups logic (if needed, or re-render handles it)
+        // If root array becomes empty, it's fine.
+        // If a group becomes empty or has 1 child, we might want to flatten.
+        // For MVP, just re-render.
+        renderLogicDeck();
+        updateGeneratedSQL();
+    };
+    row.appendChild(del);
+
+    return row;
+}
+
+function handleValueDrop(ev, rule) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    const raw = ev.dataTransfer.getData("application/json");
+    if(!raw) return;
+    const payload = JSON.parse(raw);
+
+    // FIX: Allow both CTEs AND Regular Tables
+    let schema = [];
+    if (payload.type === 'table') {
+        if (currentData.ctes[payload.name]) {
+            schema = currentData.ctes[payload.name].schema;
+        } else if (currentData.tables[payload.name]) {
+            schema = currentData.tables[payload.name].schema;
+        }
+        
+        if (schema.length > 0) {
+            // Valid table source
+            if (schema.length === 1) {
+                // Auto Select Single Col
+                rule.right = { 
+                    type: 'cte', 
+                    val: `(SELECT [${schema[0]}] FROM [${payload.name}])`, 
+                    label: `${payload.name}.${schema[0]}`,
+                    tableName: payload.name // FIX: Store table name for dependency check
+                };
+                renderLogicDeck();
+                updateGeneratedSQL();
+            } else {
+                showCteColSelector(payload.name, schema, rule);
+            }
+        }
+    }
+}
+
+function showCteColSelector(cteName, cols, ruleObj) {
+    const modal = document.getElementById('cteModal');
+    document.getElementById('modalCteName').innerText = cteName;
+    const list = document.getElementById('modalList');
+    list.innerHTML = "";
+
+    cols.forEach(col => {
+        const item = document.createElement('div');
+        item.className = 'popover-item';
+        item.innerText = col;
+        item.onclick = () => {
+            ruleObj.right = { type: 'cte', val: `(SELECT [${col}] FROM [${cteName}])`, label: `${cteName}.${col}` };
+            modal.style.display = 'none';
+            renderLogicDeck();
+            updateGeneratedSQL();
+        };
+        list.appendChild(item);
+    });
+
+    modal.style.display = 'block';
+}
+
+// --- UPDATE SQL GENERATOR FOR LOGIC DECK ---
+
+function buildLogicString(items) {
+    if (items.length === 0) return "";
+    
+    // items is array of rules/groups.
+    // If multiple items at root level, what connects them?
+    // Our data structure: [ {type: 'group', op: 'AND', children: [rule1, rule2]} ]
+    // The visual builder usually ensures Root is either a list of rules (implicit AND? No, we added manual connector logic).
+    // Actually, our Add Drop Logic wraps things in a Group if collision.
+    // So usually root has 1 item (Group) or 1 item (Rule).
+    // If flat list [Rule1, Rule2], we need implicit connector.
+    // Let's assume Root Level is Implicit AND if multiple.
+    
+    return items.map(item => parseItem(item)).join(" AND ");
+}
+
+function parseItem(item) {
+    if (item.type === 'group') {
+        const childrenSQL = item.children.map(c => parseItem(c));
+        return `(${childrenSQL.join(` ${item.op} `)})`;
+    } else {
+        // Rule
+        const rightVal = item.right.type === 'cte' ? item.right.val : `'${item.right.val}'`; // Add quotes for text?
+        // Basic type check for quotes? For MVP assume string literal unless number.
+        // Better: Check if number.
+        let val = item.right.val;
+        if(item.right.type !== 'cte' && isNaN(val) && !val.startsWith("'")) {
+             val = `'${val}'`;
+        }
+        
+        return `${item.left.val} ${item.op} ${val}`;
+    }
+}
+
+// --- UNION BUILDER LOGIC (Existing...) ---
 function openUnionModal() {
     // If NOT editing, reset state
     if (!editingCTEName) {
@@ -444,6 +810,25 @@ function saveViewAsCTE() {
         }
     });
 
+    // Check Logic Deck dependencies too (CTEs used in Subqueries)
+    // currentLogicState.WHERE... check right.type === 'cte'
+    // Simplified recursive check needed if deep.
+    // For now assuming visual tables cover dependencies or user manually adds them.
+    // Robust way: Traverse logic state
+    function traverseLogicForDeps(arr) {
+        arr.forEach(item => {
+            if(item.type === 'group') traverseLogicForDeps(item.children);
+            else if(item.right.type === 'cte') {
+                // item.right.label is "CTEName.ColName" or "CTEName"
+                const cteName = item.right.label.split('.')[0];
+                if(currentData.ctes[cteName]) cteDependencies.push(cteName);
+            }
+        });
+    }
+    traverseLogicForDeps(currentLogicState.WHERE);
+    traverseLogicForDeps(currentLogicState.HAVING);
+
+
     baseTables = [...new Set(baseTables)];
     cteDependencies = [...new Set(cteDependencies)];
 
@@ -451,7 +836,8 @@ function saveViewAsCTE() {
     // We must deep clone the state so subsequent canvas edits don't mutate the saved CTE
     const visualState = {
         tables: JSON.parse(JSON.stringify(tablesOnCanvas)),
-        joins: JSON.parse(JSON.stringify(currentData.joins))
+        joins: JSON.parse(JSON.stringify(currentData.joins)),
+        logic: JSON.parse(JSON.stringify(currentLogicState)) // NEW: Save Logic
     };
 
     // 5. SAVE CTE DEFINITION
@@ -505,6 +891,13 @@ function loadCTEForEdit(name) {
     // RESTORE STATE
     tablesOnCanvas = JSON.parse(JSON.stringify(cte.visualState.tables));
     currentData.joins = JSON.parse(JSON.stringify(cte.visualState.joins));
+    // Restore Logic if exists
+    if (cte.visualState.logic) {
+        currentLogicState = JSON.parse(JSON.stringify(cte.visualState.logic));
+    } else {
+        currentLogicState = { WHERE: [], HAVING: [] };
+    }
+    
     editingCTEName = name;
 
     // REDRAW
@@ -515,6 +908,7 @@ function loadCTEForEdit(name) {
 
     tablesOnCanvas.forEach(t => renderTableCard(t));
     renderJoins();
+    renderLogicDeck(); // NEW
     updateGeneratedSQL();
 }
 
@@ -536,6 +930,8 @@ function deleteCTE(name) {
 function clearCanvas() {
     tablesOnCanvas = [];
     currentData.joins = [];
+    currentLogicState = { WHERE: [], HAVING: [] }; // Reset Logic
+    
     const canvas = document.getElementById('visual-drop-zone');
     const svg = document.getElementById('connections-layer');
     canvas.innerHTML = '';
@@ -547,6 +943,7 @@ function clearCanvas() {
     canvas.appendChild(empty);
     
     renderJoins(); // Clears lines
+    renderLogicDeck(); // Clears deck
 }
 
 // --- HELPER: Calculate Global Sort Rank for Badge Display ---
@@ -637,6 +1034,18 @@ function generateSQLFromCanvas() {
         }
     });
 
+    // NEW: Append WHERE
+    const whereStr = buildLogicString(currentLogicState.WHERE);
+    if(whereStr) {
+        sql += `\nWHERE ${whereStr}`;
+    }
+
+    // NEW: Append HAVING
+    const havingStr = buildLogicString(currentLogicState.HAVING);
+    if(havingStr) {
+        sql += `\nHAVING ${havingStr}`;
+    }
+
     // NEW: Append ORDER BY
     if (orderBys.length > 0) {
         orderBys.sort((a,b) => a.ts - b.ts);
@@ -652,15 +1061,33 @@ function updateGeneratedSQL() {
         return;
     }
 
-    // 1. RESOLVE DEPENDENCIES (Recursive)
-    // Find all CTEs used directly on canvas
+    // 1. Identify CTEs on Canvas
     let directCTEs = tablesOnCanvas
         .filter(t => currentData.ctes[t.name])
         .map(t => t.name);
     
-    // Get ordered list of ALL needed CTEs (nested)
+    // 2. Identify CTEs in Logic Deck (only ACTUAL CTEs needed for WITH clause)
+    function traverseLogicForDeps(arr) {
+        arr.forEach(item => {
+            if(item.type === 'group') {
+                traverseLogicForDeps(item.children);
+            }
+            else if(item.right && item.right.type === 'cte') {
+                const tName = item.right.tableName || item.right.label.split('.')[0];
+                if(currentData.ctes[tName]) directCTEs.push(tName);
+                // We ignore regular tables here; they don't need a WITH clause definition
+            }
+        });
+    }
+    
+    if(currentLogicState.WHERE) traverseLogicForDeps(currentLogicState.WHERE);
+    if(currentLogicState.HAVING) traverseLogicForDeps(currentLogicState.HAVING);
+
+    // 3. Resolve Dependencies and Order
+    directCTEs = [...new Set(directCTEs)];
     let orderedCTEs = getResolvedCTEs(directCTEs);
 
+    // 4. Generate WITH Header
     let cteHeader = "";
     if (orderedCTEs.length > 0) {
         let defs = orderedCTEs.map(name => {
@@ -669,9 +1096,8 @@ function updateGeneratedSQL() {
         cteHeader = "WITH " + defs.join(",\n") + "\n";
     }
 
-    // 2. MAIN QUERY
+    // 5. Generate Main Query
     let mainSQL = generateSQLFromCanvas();
-
     document.getElementById('sql-editor-area').value = cteHeader + mainSQL;
 }
 
@@ -696,37 +1122,45 @@ function getResolvedCTEs(neededNames) {
 }
 
 function handleApply() {
-    const sql = document.getElementById('sql-editor-area').value;
-    
-    // RECURSIVELY COLLECT ALL BASE TABLES
-    let allBaseTables = new Set();
-    
-    // 1. Tables directly on canvas (that aren't CTEs)
-    tablesOnCanvas.forEach(t => {
-        if (!currentData.ctes[t.name]) allBaseTables.add(t.name);
-    });
+    try {
+        const sql = document.getElementById('sql-editor-area').value;
+        let allBaseTables = new Set();
+        
+        tablesOnCanvas.forEach(t => {
+            if (!currentData.ctes[t.name]) allBaseTables.add(t.name);
+        });
 
-    // 2. Tables used by CTEs on canvas (and their nested CTEs)
-    let directCTEs = tablesOnCanvas
-        .filter(t => currentData.ctes[t.name])
-        .map(t => t.name);
-    
-    let allNeededCTEs = getResolvedCTEs(directCTEs);
-
-    allNeededCTEs.forEach(cteName => {
-        const cte = currentData.ctes[cteName];
-        if (cte && cte.baseTables) {
-            cte.baseTables.forEach(t => allBaseTables.add(t));
+        let directCTEs = tablesOnCanvas.filter(t => currentData.ctes[t.name]).map(t => t.name);
+        
+        function traverseLogicForDeps(arr) {
+            if (!arr || !Array.isArray(arr)) return;
+            arr.forEach(item => {
+                if(item.type === 'group') traverseLogicForDeps(item.children);
+                else if(item.right && item.right.type === 'cte') {
+                    const tName = item.right.tableName || (item.right.label ? item.right.label.split('.')[0] : null);
+                    if (tName) {
+                        if(currentData.ctes[tName]) directCTEs.push(tName);
+                        else allBaseTables.add(tName); // FIX: Capture Regular Table dependency in subquery
+                    }
+                }
+            });
         }
-    });
+        if (currentLogicState.WHERE) traverseLogicForDeps(currentLogicState.WHERE);
+        if (currentLogicState.HAVING) traverseLogicForDeps(currentLogicState.HAVING);
 
-    const finalTableList = [...allBaseTables];
+        directCTEs = [...new Set(directCTEs)];
+        let allNeededCTEs = getResolvedCTEs(directCTEs);
 
-    Office.context.ui.messageParent(JSON.stringify({ 
-        action: "runQuery", 
-        sql: sql,
-        tables: finalTableList 
-    }));
+        allNeededCTEs.forEach(cteName => {
+            const cte = currentData.ctes[cteName];
+            if (cte && cte.baseTables) cte.baseTables.forEach(t => allBaseTables.add(t));
+        });
+
+        const finalTableList = [...allBaseTables];
+        Office.context.ui.messageParent(JSON.stringify({ action: "runQuery", sql: sql, tables: finalTableList }));
+    } catch (e) {
+        console.error("Handle Apply Error:", e);
+    }
 }
 
 // --- RENDER SIDEBAR ---
