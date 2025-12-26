@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SQL Advanced Editor</title>
 
+    <!-- Office JS (Must be loaded first) -->
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+    <!-- Sortable Library for Drag and Drop -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
     <link href="dialog.css" rel="stylesheet" type="text/css" />
@@ -35,14 +37,31 @@
             </div>
         </div>
 
-        <div class="main-area">
+        <div class="main-area" style="flex-direction: column;">
             <!-- VIEW 1: VISUAL JOINER -->
-            <div id="view-visual" class="canvas-view" style="display:flex;">
+            <div id="view-visual" class="canvas-view" style="display:flex; flex-direction: column;">
                 <div class="canvas-bg" id="visual-drop-zone">
                     <!-- SVG LAYER FOR LINES -->
                     <svg id="connections-layer"></svg>
                     
                     <div class="empty-state">Drag Tables here, connect them, then click "Save View as CTE" to build logic steps.</div>
+                </div>
+
+                <!-- LOGIC DECK (New) -->
+                <div class="logic-deck" id="logicDeck">
+                    <div class="deck-header">
+                        <div class="deck-tab active" id="tab-logic-where" onclick="switchLogicTab('WHERE')">WHERE</div>
+                        <div class="deck-tab" id="tab-logic-having" onclick="switchLogicTab('HAVING')">HAVING</div>
+                        <div class="deck-toggle" onclick="toggleDeck()">▼</div>
+                    </div>
+                    
+                    <!-- LOGIC DROP ZONE -->
+                    <div class="deck-body" id="logicRootZone">
+                        <div class="empty-state-logic" id="logicEmptyMsg">
+                            Drag a column or CTE here to start filtering.
+                        </div>
+                        <!-- Rules/Groups will be injected here -->
+                    </div>
                 </div>
             </div>
 
@@ -173,7 +192,7 @@
         </div>
     </div>
 
-    <!-- MODAL: UNION BUILDER (NEW) -->
+    <!-- MODAL: UNION BUILDER -->
     <div id="modal-union-builder" class="modal-overlay" style="display:none;">
         <div class="modal-card" style="width: 800px; max-width: 95vw; height: 700px;">
             <div class="modal-header">
@@ -181,17 +200,11 @@
                 <span class="close-modal-btn" id="btn-close-union">✖</span>
             </div>
             <div class="modal-body" style="display:flex; flex:1; overflow:hidden;">
-                <!-- Sidebar -->
                 <div class="union-sidebar">
                     <div class="sidebar-title">Available Tables</div>
-                    <div id="union-source-list" class="union-source-list">
-                        <!-- Populated by JS -->
-                    </div>
+                    <div id="union-source-list" class="union-source-list"></div>
                 </div>
-
-                <!-- Config -->
                 <div class="union-config-area">
-                    <!-- Step 1 -->
                     <div class="step-box">
                         <div class="step-label"><span class="step-number">1</span> Master Table (Defines Output)</div>
                         <select id="union-master-select">
@@ -199,8 +212,6 @@
                         </select>
                         <div id="union-master-cols" style="margin-top:5px; font-size:11px; color:#666;"></div>
                     </div>
-
-                    <!-- Step 2 -->
                     <div class="step-box" id="union-step-mapping" style="display:none;">
                         <div class="step-label">
                             <span class="step-number">2</span> Column Mapping
@@ -211,8 +222,6 @@
                         </div>
                         <div id="union-mapping-container"></div>
                     </div>
-                    
-                    <!-- Step 3 Name -->
                      <div class="step-box" id="union-step-name" style="display:none;">
                         <div class="step-label"><span class="step-number">3</span> Name Result</div>
                         <input type="text" id="union-result-name" placeholder="e.g. All_Sales_Data" style="width:100%;">
@@ -225,9 +234,12 @@
             </div>
         </div>
     </div>
-<script src="dialog.js" type="text/javascript"></script>
+
+    <!-- MODAL: CTE COLUMN SELECTION (NEW) -->
+    <div id="cteModal" class="mini-popover">
+        <div class="popover-title">Select Column from <span id="modalCteName"></span></div>
+        <div class="popover-list" id="modalList"></div>
+    </div>
+
 </body>
 </html>
-
-
-
