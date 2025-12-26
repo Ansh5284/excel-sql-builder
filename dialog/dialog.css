@@ -9,6 +9,12 @@
     --error-red: #a80000;
     --sort-green: #107c10;
     --sort-bg: #e6ffec;
+    /* Logic Deck Specific */
+    --cte-color: #d13438;
+    --cte-bg: #fde7e9;
+    --rule-bg: #ffffff;
+    --group-bg: #eef1f5;
+    --group-border: #ccd1d9;
 }
 
 body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -298,3 +304,81 @@ select { padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size
     color: red;
 }
 
+/* --- LOGIC DECK STYLES --- */
+.logic-deck {
+    height: 350px;
+    background: white;
+    border-top: 2px solid var(--brand);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 -4px 15px rgba(0,0,0,0.1);
+    transition: height 0.3s;
+    flex-shrink: 0;
+}
+.deck-header {
+    padding: 0; background: #f8f8f8; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; height: 35px;
+}
+.deck-tab {
+    padding: 0 20px; height: 100%; display: flex; align-items: center; 
+    font-size: 12px; font-weight: 600; color: #666; cursor: pointer; border-right: 1px solid #eee;
+}
+.deck-tab.active { background: white; color: var(--brand); border-top: 3px solid var(--brand); margin-top: -2px; }
+.deck-toggle { margin-left: auto; padding: 0 15px; cursor: pointer; font-size: 12px; }
+
+.deck-body { 
+    flex: 1; padding: 20px; overflow: auto; background-color: #fcfcfc; position: relative;
+}
+
+.empty-state-logic {
+    text-align: center; color: #999; margin-top: 40px; font-size: 13px; pointer-events: none;
+}
+
+/* Logic Containers & Bubbles */
+.logic-container {
+    display: flex; flex-direction: column; gap: 10px; padding: 10px; min-height: 100px;
+    border: 2px dashed transparent; border-radius: 8px; transition: all 0.2s;
+}
+.logic-container.drag-over {
+    border-color: var(--brand); background-color: rgba(0, 120, 212, 0.05);
+}
+
+.logic-group {
+    background: var(--group-bg); border: 1px solid var(--group-border);
+    border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; position: relative;
+}
+.logic-group.drag-over-group {
+    box-shadow: 0 0 0 2px var(--brand) inset; background-color: white;
+}
+
+.logic-row {
+    display: flex; align-items: center; background: white; border: 1px solid #ddd;
+    border-radius: 20px; padding: 4px 8px; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.col-badge { background: #e6f2ff; color: var(--brand); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.cte-badge { background: var(--cte-bg); color: var(--cte-color); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.op-select { border: none; background: transparent; font-weight: bold; color: #555; cursor: pointer; font-size: 12px; }
+.value-input { border: 1px solid #eee; border-radius: 4px; padding: 2px 5px; font-size: 12px; width: 100px; }
+.value-input.drag-over { border-color: var(--brand); background: #eff6fc; }
+
+.btn-del-rule { color: #ccc; cursor: pointer; margin-left: auto; font-size: 14px; font-weight: bold; }
+.btn-del-rule:hover { color: red; }
+
+.logic-connector {
+    align-self: center; background: #e1dfdd; color: #333; font-size: 10px; font-weight: bold;
+    padding: 2px 8px; border-radius: 10px; cursor: pointer; margin: -4px 0; z-index: 1;
+}
+.logic-connector:hover { background: #d0d0d0; }
+.logic-connector[data-op="OR"] { background: #fff4ce; color: #555; }
+
+/* MINI POPOVER */
+.mini-popover {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: white; border: 1px solid #ccc; box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    padding: 15px; border-radius: 6px; z-index: 1000; display: none; width: 250px;
+}
+.popover-title { font-weight: bold; font-size: 12px; margin-bottom: 10px; }
+.popover-list { display: flex; flex-direction: column; gap: 5px; }
+.popover-item { padding: 5px; background: #f0f0f0; border-radius: 4px; cursor: pointer; font-size: 11px; }
+.popover-item:hover { background: var(--brand); color: white; }
